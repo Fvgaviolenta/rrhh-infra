@@ -156,3 +156,44 @@ run "events_queue_has_dlq_with_five_receives" {
     error_message = "visibility 60 s, long polling 20 s, retención 4 días y DLQ 14 días"
   }
 }
+
+run "google_idp_absent_when_unset" {
+  command = plan
+
+  assert {
+    condition     = length(aws_cognito_identity_provider.google) == 0 && toset(aws_cognito_user_pool_client.spa.supported_identity_providers) == toset(["COGNITO"])
+    error_message = "sin credenciales de Google no hay proveedor ni se lista en el client"
+  }
+}
+
+run "google_idp_present_when_set" {
+  command = plan
+
+  variables {
+    google_client_id     = "id-de-prueba"
+    google_client_secret = "secret-de-prueba"
+  }
+
+  assert {
+    condition     = length(aws_cognito_identity_provider.google) == 1 && contains(aws_cognito_user_pool_client.spa.supported_identity_providers, "Google")
+    error_message = "con credenciales debe existir Google"
+  }
+}
+
+run "pool_has_tenant_id_and_public_client" {
+  command = plan
+
+  assert {
+    condition     = contains([for s in aws_cognito_user_pool.main.schema : s.name], "tenant_id") && !contains([for s in aws_cognito_user_pool.main.schema : s.name], "tenat_id") && aws_cognito_user_pool_client.spa.generate_secret == false
+    error_message = "el pool necesita custom:tenant_id (no tenat_id) y el client no lleva secret"
+  }
+}
+
+run "amplify_spa_rewrite_serves_index" {
+  command = plan
+
+  assert {
+    condition     = one([for r in aws_amplify_app.frontend.custom_rule : r if r.target == "/index.html"]).status == "404-200"
+    error_message = "la SPA necesita la reescritura 404-200 hacia /index.html"
+  }
+}
