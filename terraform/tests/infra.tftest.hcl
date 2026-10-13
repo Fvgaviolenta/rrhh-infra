@@ -96,3 +96,41 @@ run "data_sg_opens_only_mysql_and_redis_to_ecs" {
     error_message = "rrhh-sg-data solo acepta 3306 y 6379 desde rrhh-sg-ecs"
   }
 }
+
+run "alb_rules_unique_priorities_and_404_default" {
+  command = plan
+
+  assert {
+    condition     = length(local.alb_rules) == 21 && length(distinct([for r in local.alb_rules : r.priority])) == 21
+    error_message = "el JSON debe tener 21 reglas con prioridades únicas"
+  }
+
+  assert {
+    condition     = aws_lb_listener.http.default_action[0].fixed_response[0].status_code == "404"
+    error_message = "el listener debe responder 404 por defecto"
+  }
+}
+
+run "platform_subroutes_and_horas_extra_are_routed" {
+  command = plan
+
+  assert {
+    condition = alltrue([
+      contains([for r in local.alb_rules : r.path], "/api/v1/horas-extra*"),
+      contains([for r in local.alb_rules : r.path], "/api/v1/plataforma/tenants/*/trabajadores*"),
+      contains([for r in local.alb_rules : r.path], "/api/v1/plataforma/tenants/*/contratos*"),
+      contains([for r in local.alb_rules : r.path], "/api/v1/plataforma/tenants/*/ausencias*"),
+      contains([for r in local.alb_rules : r.path], "/api/v1/plataforma/tenants/*/notificaciones*"),
+    ])
+    error_message = "faltan reglas de horas-extra o de plataforma por servicio"
+  }
+}
+
+run "six_target_groups_with_actuator_health" {
+  command = plan
+
+  assert {
+    condition     = length(aws_lb_target_group.svc) == 6 && alltrue([for k, t in aws_lb_target_group.svc : t.health_check[0].path == "/actuator/health" && t.target_type == "ip"])
+    error_message = "6 target groups tipo ip con health check /actuator/health"
+  }
+}
