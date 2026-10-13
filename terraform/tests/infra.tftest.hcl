@@ -33,6 +33,37 @@ mock_provider "aws" {
       value = "ami-0123456789abcdef0"
     }
   }
+
+  mock_resource "aws_lb" {
+    defaults = {
+      arn      = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/rrhh-alb-internal/0123456789abcdef"
+      dns_name = "internal-rrhh-alb-internal-1.us-east-1.elb.amazonaws.com"
+    }
+  }
+
+  mock_resource "aws_lb_target_group" {
+    defaults = {
+      arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/rrhh-tg/0123456789abcdef"
+    }
+  }
+
+  mock_resource "aws_lb_listener" {
+    defaults = {
+      arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/rrhh-alb-internal/0123456789abcdef/0123456789abcdef"
+    }
+  }
+
+  mock_resource "aws_ssm_parameter" {
+    defaults = {
+      arn = "arn:aws:ssm:us-east-1:123456789012:parameter/rrhh/db/password"
+    }
+  }
+
+  mock_resource "aws_instance" {
+    defaults = {
+      private_ip = "172.31.88.7"
+    }
+  }
 }
 
 run "six_services_with_fixed_ports" {
@@ -195,5 +226,87 @@ run "amplify_spa_rewrite_serves_index" {
   assert {
     condition     = one([for r in aws_amplify_app.frontend.custom_rule : r if r.target == "/index.html"]).status == "404-200"
     error_message = "la SPA necesita la reescritura 404-200 hacia /index.html"
+  }
+}
+
+run "cluster_has_only_fargate_by_default" {
+  command = plan
+
+  assert {
+    condition     = toset(aws_ecs_cluster_capacity_providers.rrhh.capacity_providers) == toset(["FARGATE", "FARGATE_SPOT"])
+    error_message = "sin enable_managed_instances el cluster solo usa FARGATE y FARGATE_SPOT"
+  }
+}
+
+run "no_iam_roles_are_created" {
+  command = plan
+
+  assert {
+    condition     = length(keys(aws_ecs_task_definition.svc)) == 6 && alltrue([for k, t in aws_ecs_task_definition.svc : t.execution_role_arn == "arn:aws:iam::123456789012:role/LabRole" && t.task_role_arn == "arn:aws:iam::123456789012:role/LabRole"])
+    error_message = "todas las tareas usan LabRole y no se crean roles"
+  }
+}
+
+run "contratos_receives_integration_urls_and_notifications_redis" {
+  command = apply
+
+  assert {
+    condition     = length([for e in jsondecode(aws_ecs_task_definition.svc["contratos"].container_definitions)[0].environment : e if e.name == "RRHH_TRABAJADORES_URL" || e.name == "RRHH_ASISTENCIA_URL"]) == 2
+    error_message = "contratos necesita las URLs de trabajadores y asistencia"
+  }
+
+  assert {
+    condition     = length([for e in jsondecode(aws_ecs_task_definition.svc["notifications"].container_definitions)[0].environment : e if e.name == "REDIS_HOST" || e.name == "SQS_EVENTS_QUEUE_URL"]) == 2
+    error_message = "notifications necesita REDIS_HOST y SQS_EVENTS_QUEUE_URL"
+  }
+}
+
+run "db_password_comes_from_ssm_secret" {
+  command = apply
+
+  assert {
+    condition = alltrue([for k, t in aws_ecs_task_definition.svc :
+      length([for c in jsondecode(t.container_definitions) : c if length([for x in c.secrets : x if x.name == "SPRING_DATASOURCE_PASSWORD"]) == 1 && length([for e in c.environment : e if e.name == "SPRING_DATASOURCE_PASSWORD"]) == 0]) == 1
+    ])
+    error_message = "la contraseña llega por secrets (SSM), no por environment"
+  }
+}
+
+run "services_use_public_ip_and_wait_on_identity" {
+  command = plan
+
+  assert {
+    condition     = alltrue([for s in concat([aws_ecs_service.identity], values(aws_ecs_service.svc)) : s.network_configuration[0].assign_public_ip == true && s.health_check_grace_period_seconds == 120]) && length(aws_ecs_service.svc) == 5
+    error_message = "los 6 servicios con IP pública y grace period 120"
+  }
+
+  assert {
+    condition     = aws_ecs_service.identity.wait_for_steady_state == true && alltrue([for k, s in aws_ecs_service.svc : s.wait_for_steady_state == false])
+    error_message = "solo identity espera estado estable"
+  }
+}
+
+run "client_cannot_write_security_claims" {
+  command = plan
+
+  assert {
+    condition     = length([for a in aws_cognito_user_pool_client.spa.write_attributes : a if startswith(a, "custom:")]) == 0 && length(aws_cognito_user_pool_client.spa.read_attributes) == 6
+    error_message = "el client no puede escribir custom:role, custom:tenant_id ni los demás claims; solo lectura"
+  }
+}
+
+run "db_password_goes_to_environment_only_without_ssm" {
+  command = apply
+
+  variables {
+    use_ssm_secrets = false
+    db_password     = "pw-de-prueba"
+  }
+
+  assert {
+    condition = alltrue([for k, t in aws_ecs_task_definition.svc :
+      length(jsondecode(t.container_definitions)[0].secrets) == 0 && length([for e in jsondecode(t.container_definitions)[0].environment : e if e.name == "SPRING_DATASOURCE_PASSWORD"]) == 1
+    ])
+    error_message = "con use_ssm_secrets = false la contraseña va solo por environment"
   }
 }

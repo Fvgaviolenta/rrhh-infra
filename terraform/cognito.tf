@@ -109,8 +109,11 @@ resource "aws_cognito_user_pool_client" "spa" {
   enable_token_revocation       = true
   prevent_user_existence_errors = "ENABLED"
 
-  read_attributes  = concat([for a in local.cognito_custom_attributes : "custom:${a}"], ["email", "name"])
-  write_attributes = concat([for a in local.cognito_custom_attributes : "custom:${a}"], ["email", "name"])
+  read_attributes = concat([for a in local.cognito_custom_attributes : "custom:${a}"], ["email", "name"])
+
+  # role, tenant_id, user_id y trabajador_id son claims de autorización: solo los escribe el
+  # backend con las APIs admin (AdminCreateUser/AdminUpdateUserAttributes), nunca el usuario.
+  write_attributes = ["email", "name"]
 
   depends_on = [aws_cognito_identity_provider.google]
 }
