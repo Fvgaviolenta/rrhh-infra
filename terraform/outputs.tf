@@ -53,7 +53,7 @@ output "next_steps" {
 }
 
 output "vite_env" {
-  description = "Las 9 variables VITE_* que lee el frontend al compilar"
+  description = "Las variables VITE_* que lee el frontend al compilar"
   value = {
     VITE_API_GATEWAY_URL   = local.api_base
     VITE_API_IDENTITY      = "${local.api_base}/api/v1"
@@ -64,5 +64,9 @@ output "vite_env" {
     VITE_API_NOTIFICATIONS = "${local.api_base}/api/v1"
     VITE_COGNITO_REGION    = var.region
     VITE_COGNITO_CLIENT_ID = aws_cognito_user_pool_client.spa.id
+    # cognitoAuth.ts exige el pool o el issuer; oidcConfig.ts usa el issuer y el dominio para el login y el logout.
+    VITE_COGNITO_USER_POOL_ID = aws_cognito_user_pool.main.id
+    VITE_COGNITO_ISSUER       = local.cognito_issuer
+    VITE_COGNITO_DOMAIN       = "https://${aws_cognito_user_pool_domain.main.domain}.auth.${var.region}.amazoncognito.com"
   }
 }

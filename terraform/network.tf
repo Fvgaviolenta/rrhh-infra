@@ -93,6 +93,27 @@ resource "aws_vpc_security_group_ingress_rule" "alb_from_vpc_link" {
   description                  = "HTTP desde el VPC Link"
 }
 
+# contratos llama a http://<dns del ALB> desde los servicios ECS (RRHH_TRABAJADORES_URL y RRHH_ASISTENCIA_URL).
+resource "aws_vpc_security_group_ingress_rule" "alb_from_ecs" {
+  security_group_id            = aws_security_group.alb.id
+  referenced_security_group_id = aws_security_group.ecs.id
+  ip_protocol                  = "tcp"
+  from_port                    = 80
+  to_port                      = 80
+  description                  = "HTTP desde los servicios ECS"
+}
+
+resource "aws_vpc_security_group_egress_rule" "ecs_to_alb" {
+  count = var.restrict_egress ? 1 : 0
+
+  security_group_id            = aws_security_group.ecs.id
+  referenced_security_group_id = aws_security_group.alb.id
+  ip_protocol                  = "tcp"
+  from_port                    = 80
+  to_port                      = 80
+  description                  = "HTTP hacia el ALB interno"
+}
+
 resource "aws_vpc_security_group_egress_rule" "alb_to_ecs" {
   security_group_id            = aws_security_group.alb.id
   referenced_security_group_id = aws_security_group.ecs.id

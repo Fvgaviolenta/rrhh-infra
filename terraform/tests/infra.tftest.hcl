@@ -329,11 +329,63 @@ run "stage_throttling_is_real_not_stage_variables" {
   }
 }
 
-run "outputs_expose_nine_vite_variables" {
+run "outputs_expose_the_vite_variables_the_frontend_reads" {
   command = plan
 
   assert {
-    condition     = length(keys(output.vite_env)) == 9
-    error_message = "el frontend lee exactamente 9 variables VITE_*"
+    condition = alltrue([for k in [
+      "VITE_API_GATEWAY_URL", "VITE_API_IDENTITY", "VITE_API_TRABAJADORES", "VITE_API_CONTRATOS",
+      "VITE_API_ASISTENCIA", "VITE_API_AUSENCIAS", "VITE_API_NOTIFICATIONS", "VITE_COGNITO_REGION",
+      "VITE_COGNITO_CLIENT_ID", "VITE_COGNITO_USER_POOL_ID", "VITE_COGNITO_ISSUER", "VITE_COGNITO_DOMAIN",
+    ] : contains(keys(output.vite_env), k)])
+    error_message = "cognitoAuth.ts y oidcConfig.ts exigen el pool o el issuer y el dominio además de las 9 variables de la guía"
   }
+}
+
+run "google_idp_absent_when_secret_missing" {
+  command = plan
+
+  variables {
+    google_client_id = "id-de-prueba"
+  }
+
+  assert {
+    condition     = length(aws_cognito_identity_provider.google) == 0 && !contains(aws_cognito_user_pool_client.spa.supported_identity_providers, "Google")
+    error_message = "con id pero sin secret no se crea el proveedor Google"
+  }
+}
+
+run "ecs_services_can_call_the_internal_alb" {
+  command = plan
+
+  assert {
+    condition     = aws_vpc_security_group_ingress_rule.alb_from_ecs.from_port == 80
+    error_message = "contratos llama al ALB desde rrhh-sg-ecs: el ALB debe aceptar el puerto 80 desde ese SG"
+  }
+}
+
+run "subnet_guard_fails_with_zero_subnets" {
+  command = plan
+
+  override_data {
+    target = data.aws_subnets.chosen
+    values = {
+      ids = []
+    }
+  }
+
+  expect_failures = [terraform_data.subnet_guard]
+}
+
+run "subnet_guard_fails_with_six_subnets" {
+  command = plan
+
+  override_data {
+    target = data.aws_subnets.chosen
+    values = {
+      ids = ["subnet-1", "subnet-2", "subnet-3", "subnet-4", "subnet-5", "subnet-6"]
+    }
+  }
+
+  expect_failures = [terraform_data.subnet_guard]
 }

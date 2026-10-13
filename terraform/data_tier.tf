@@ -5,7 +5,7 @@ data "aws_ssm_parameter" "al2023" {
 resource "aws_instance" "data" {
   ami                    = data.aws_ssm_parameter.al2023.value
   instance_type          = var.data_instance_type
-  subnet_id              = local.subnet_ids[0]
+  subnet_id              = try(local.subnet_ids[0], null) # sin subnets falla subnet_guard, no un índice inválido
   vpc_security_group_ids = [aws_security_group.data.id]
   iam_instance_profile   = var.instance_profile_name
   key_name               = var.data_key_name == "" ? null : var.data_key_name
@@ -33,6 +33,12 @@ resource "aws_instance" "data" {
   }
 
   depends_on = [aws_ssm_parameter.db_password]
+
+  # El parámetro público apunta siempre al AMI más nuevo; sin esto, un AMI nuevo reemplaza la
+  # instancia y se pierde el volumen de MySQL que vive en su disco raíz.
+  lifecycle {
+    ignore_changes = [ami]
+  }
 }
 
 resource "aws_eip" "data" {

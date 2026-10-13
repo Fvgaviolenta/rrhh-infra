@@ -1,6 +1,6 @@
 locals {
   cognito_issuer = "https://cognito-idp.${var.region}.amazonaws.com/${aws_cognito_user_pool.main.id}"
-  google_enabled = var.google_client_id != ""
+  google_enabled = var.google_client_id != "" && var.google_client_secret != ""
 
   # Atributos custom del pool, sin el prefijo custom: que Cognito agrega solo.
   cognito_custom_attributes = ["role", "tenant_id", "user_id", "trabajador_id"]
