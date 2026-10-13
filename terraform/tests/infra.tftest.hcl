@@ -310,3 +310,30 @@ run "db_password_goes_to_environment_only_without_ssm" {
     error_message = "con use_ssm_secrets = false la contraseña va solo por environment"
   }
 }
+
+run "api_has_two_routes_jwt_except_resolver" {
+  command = plan
+
+  assert {
+    condition     = length(aws_apigatewayv2_route.routes) == 2 && aws_apigatewayv2_route.routes["GET /api/v1/tenants/resolver"].authorization_type == "NONE" && aws_apigatewayv2_route.routes["ANY /api/v1/{proxy+}"].authorization_type == "JWT"
+    error_message = "solo resolver sin autenticación; el resto con JWT"
+  }
+}
+
+run "stage_throttling_is_real_not_stage_variables" {
+  command = plan
+
+  assert {
+    condition     = aws_apigatewayv2_stage.default.default_route_settings[0].throttling_rate_limit == 30 && aws_apigatewayv2_stage.default.default_route_settings[0].throttling_burst_limit == 60 && aws_apigatewayv2_stage.default.auto_deploy == true
+    error_message = "stage $default con rate 30, burst 60 y auto deploy"
+  }
+}
+
+run "outputs_expose_nine_vite_variables" {
+  command = plan
+
+  assert {
+    condition     = length(keys(output.vite_env)) == 9
+    error_message = "el frontend lee exactamente 9 variables VITE_*"
+  }
+}
