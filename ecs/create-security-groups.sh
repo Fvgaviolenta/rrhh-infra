@@ -31,7 +31,7 @@ SG_ALB_INTERNAL="$(sg rrhh-sg-alb-internal "ALB interno HTTP API VPC Link")"
 SG_FARGATE_MS="$(sg rrhh-sg-fargate-ms "Fargate microservicios 8081-8086")"
 SG_ALB_PUBLIC="$(sg rrhh-sg-alb-public "ALB publico frontend")"
 SG_FRONTEND="$(sg rrhh-sg-frontend "Fargate frontend 3000")"
-SG_DATOS="$(sg rrhh-sg-datos "EC2 MySQL Redis RabbitMQ")"
+SG_DATOS="$(sg rrhh-sg-datos "EC2 MySQL Redis")"
 
 # --- Inbound ---
 aws ec2 authorize-security-group-ingress --group-id "$SG_ALB_INTERNAL" --region "$REGION" \
@@ -48,7 +48,7 @@ aws ec2 authorize-security-group-ingress --group-id "$SG_ALB_PUBLIC" --region "$
 aws ec2 authorize-security-group-ingress --group-id "$SG_FRONTEND" --region "$REGION" \
   --ip-permissions "IpProtocol=tcp,FromPort=3000,ToPort=3000,UserIdGroupPairs=[{GroupId=${SG_ALB_PUBLIC}}]" >/dev/null
 
-for port in 3306 6379 5672; do
+for port in 3306 6379; do
   aws ec2 authorize-security-group-ingress --group-id "$SG_DATOS" --region "$REGION" \
     --ip-permissions "IpProtocol=tcp,FromPort=${port},ToPort=${port},UserIdGroupPairs=[{GroupId=${SG_FARGATE_MS}}]" >/dev/null
 done
@@ -66,7 +66,7 @@ aws ec2 authorize-security-group-egress --group-id "$SG_ALB_PUBLIC" --region "$R
   --ip-permissions "IpProtocol=tcp,FromPort=3000,ToPort=3000,UserIdGroupPairs=[{GroupId=${SG_FRONTEND}}]" >/dev/null
 
 revoke_all_egress "$SG_FARGATE_MS"
-for port in 3306 6379 5672; do
+for port in 3306 6379; do
   aws ec2 authorize-security-group-egress --group-id "$SG_FARGATE_MS" --region "$REGION" \
     --ip-permissions "IpProtocol=tcp,FromPort=${port},ToPort=${port},UserIdGroupPairs=[{GroupId=${SG_DATOS}}]" >/dev/null
 done

@@ -21,4 +21,6 @@ docker compose -f docker-compose.lab.yml --env-file rrhh-infra/.env.aws up -d
 
 Las migraciones de dominio las aplica cada microservicio con Flyway.
 
+Terraform completo del lab (ECS, ALB, HTTP API, Cognito, Amplify, SQS): [`terraform/README.md`](terraform/README.md).
+
 La guía paso a paso está en [`guia-de-despliegue-aws.md`](../guia-de-despliegue-aws.md).

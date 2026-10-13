@@ -134,3 +134,25 @@ run "six_target_groups_with_actuator_health" {
     error_message = "6 target groups tipo ip con health check /actuator/health"
   }
 }
+
+run "events_queue_has_dlq_with_five_receives" {
+  command = plan
+
+  override_resource {
+    target          = aws_sqs_queue.events_dlq
+    override_during = plan
+    values = {
+      arn = "arn:aws:sqs:us-east-1:123456789012:rrhh-notifications-events-dlq"
+    }
+  }
+
+  assert {
+    condition     = jsondecode(aws_sqs_queue.events.redrive_policy).maxReceiveCount == 5
+    error_message = "la cola debe redirigir a la DLQ tras 5 recepciones"
+  }
+
+  assert {
+    condition     = aws_sqs_queue.events.visibility_timeout_seconds == 60 && aws_sqs_queue.events.receive_wait_time_seconds == 20 && aws_sqs_queue.events.message_retention_seconds == 345600 && aws_sqs_queue.events_dlq.message_retention_seconds == 1209600
+    error_message = "visibility 60 s, long polling 20 s, retención 4 días y DLQ 14 días"
+  }
+}
