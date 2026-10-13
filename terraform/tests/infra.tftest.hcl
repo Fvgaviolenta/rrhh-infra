@@ -52,3 +52,47 @@ run "two_subnets_when_not_provided" {
     error_message = "sin service_subnet_ids se descubren exactamente 2 subnets"
   }
 }
+
+run "ssh_rule_absent_when_cidr_empty" {
+  command = plan
+
+  assert {
+    condition     = length(aws_vpc_security_group_ingress_rule.data_ssh) == 0
+    error_message = "con ssh_allowed_cidr vacío no debe abrirse el 22"
+  }
+}
+
+run "ssh_rule_present_when_cidr_set" {
+  command = plan
+
+  variables {
+    ssh_allowed_cidr = "203.0.113.10/32"
+  }
+
+  assert {
+    condition     = length([for r in aws_vpc_security_group_ingress_rule.data_ssh : r]) == 1
+    error_message = "con CIDR definido debe existir exactamente una regla 22"
+  }
+}
+
+run "user_data_does_not_embed_the_db_password" {
+  command = plan
+
+  variables {
+    db_password = "pw-secreta-de-prueba"
+  }
+
+  assert {
+    condition     = !strcontains(aws_instance.data.user_data, "pw-secreta-de-prueba") && aws_ssm_parameter.db_password.type == "SecureString"
+    error_message = "la contraseña vive en SSM SecureString y no en el user-data"
+  }
+}
+
+run "data_sg_opens_only_mysql_and_redis_to_ecs" {
+  command = plan
+
+  assert {
+    condition     = toset([for r in aws_vpc_security_group_ingress_rule.data_from_ecs : r.from_port]) == toset([3306, 6379])
+    error_message = "rrhh-sg-data solo acepta 3306 y 6379 desde rrhh-sg-ecs"
+  }
+}
