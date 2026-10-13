@@ -1,0 +1,21 @@
+{
+  "family": "rrhh-rabbitmq",
+  "requiresCompatibilities": ["EC2"],
+  "networkMode": "host",
+  "containerDefinitions": [
+    {
+      "name": "rabbitmq",
+      "image": "rabbitmq:3.13-management-alpine",
+      "memory": 256,
+      "essential": true,
+      "environment": [
+        { "name": "RABBITMQ_DEFAULT_USER", "value": "rrhh" },
+        { "name": "RABBITMQ_DEFAULT_PASS", "value": "rrhh_local" }
+      ],
+      "portMappings": [
+        { "containerPort": 5672, "hostPort": 5672, "protocol": "tcp" },
+        { "containerPort": 15672, "hostPort": 15672, "protocol": "tcp" }
+      ]
+    }
+  ]
+}

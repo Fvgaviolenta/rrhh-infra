@@ -1,0 +1,57 @@
+# Plantilla para un GitHub repo de un solo microservicio (polyrepo).
+# En este lab el Git root ES el backend (Dockerfile en `.`): copia el yml
+# a `.github/workflows/ecr-push.yml` y deja TAG hardcodeado (identity, …).
+# Si el repo envuelve `backend/`, cambia CONTEXT a `backend`.
+#
+# El YAML de la raíz del workspace (.github/workflows/ecr-push.yml) es el
+# monorepo; no usarlo dentro de rrhh-identity, rrhh-frontend, etc.
+#
+# Secrets: guia-de-despliegue-aws.md paso 3 (Repository, no Environment).
+
+name: Build and push ECR (un servicio)
+
+on:
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REPO: ${{ vars.ECR_REPOSITORY || secrets.ECR_REPOSITORY || 'rrhh' }}
+          # Sustituir por el tag de este repo (identity, trabajadores, frontend, …)
+          TAG: identity
+          API_URL: ${{ secrets.NEXT_PUBLIC_API_GATEWAY_URL }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          IMAGE="${REGISTRY}/${REPO}:${TAG}"
+          EXTRA=()
+          CONTEXT="."
+          if [ "$TAG" = "frontend" ]; then
+            EXTRA+=(--build-arg "NEXT_PUBLIC_API_GATEWAY_URL=${API_URL:-https://PENDIENTE.execute-api.us-east-1.amazonaws.com}")
+          fi
+          docker build "${EXTRA[@]}" -t "$IMAGE" -t "${REGISTRY}/${REPO}:${TAG}-${SHA:0:7}" "$CONTEXT"
+          docker push "$IMAGE"
+          docker push "${REGISTRY}/${REPO}:${TAG}-${SHA:0:7}"
+          echo "Publicado $IMAGE"

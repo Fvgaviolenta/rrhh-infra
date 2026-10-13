@@ -1,0 +1,36 @@
+{
+  "family": "rrhh-ausencias",
+  "requiresCompatibilities": ["FARGATE"],
+  "networkMode": "awsvpc",
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::896111715671:role/LabRole",
+  "taskRoleArn": "arn:aws:iam::896111715671:role/LabRole",
+  "containerDefinitions": [
+    {
+      "name": "rrhh-ausencias",
+      "image": "896111715671.dkr.ecr.us-east-1.amazonaws.com/rrhh:ausencias",
+      "essential": true,
+      "portMappings": [{ "containerPort": 8085, "protocol": "tcp" }],
+      "environment": [
+        { "name": "SPRING_PROFILES_ACTIVE", "value": "cognito" },
+        { "name": "SERVER_PORT", "value": "8085" },
+        { "name": "SPRING_DATASOURCE_URL", "value": "jdbc:mysql://172.31.88.7:3306/rrhh_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC" },
+        { "name": "SPRING_DATASOURCE_USERNAME", "value": "rrhh" },
+        { "name": "SPRING_DATASOURCE_PASSWORD", "value": "rrhh_local" },
+        { "name": "COGNITO_ISSUER", "value": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_OyyaRU7Bx" },
+        { "name": "SPRING_FLYWAY_BASELINE_ON_MIGRATE", "value": "true" },
+        { "name": "SPRING_FLYWAY_BASELINE_VERSION", "value": "0" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/rrhh-ausencias",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ]
+}

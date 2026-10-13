@@ -1,0 +1,32 @@
+{
+  "family": "rrhh-mysql",
+  "requiresCompatibilities": ["EC2"],
+  "networkMode": "host",
+  "containerDefinitions": [
+    {
+      "name": "mysql",
+      "image": "mysql:8.4",
+      "memory": 512,
+      "essential": true,
+      "environment": [
+        { "name": "MYSQL_ROOT_PASSWORD", "value": "rrhh_root" },
+        { "name": "MYSQL_DATABASE", "value": "rrhh_db" },
+        { "name": "MYSQL_USER", "value": "rrhh" },
+        { "name": "MYSQL_PASSWORD", "value": "rrhh_local" }
+      ],
+      "command": [
+        "--character-set-server=utf8mb4",
+        "--collation-server=utf8mb4_unicode_ci"
+      ],
+      "portMappings": [
+        { "containerPort": 3306, "hostPort": 3306, "protocol": "tcp" }
+      ],
+      "mountPoints": [
+        { "sourceVolume": "mysql-data", "containerPath": "/var/lib/mysql" }
+      ]
+    }
+  ],
+  "volumes": [
+    { "name": "mysql-data", "host": { "sourcePath": "/var/lib/rrhh-mysql" } }
+  ]
+}
