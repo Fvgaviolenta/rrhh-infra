@@ -1,0 +1,14 @@
+# Región de AWS del lab
+region = "us-east-1"
+
+# Etiqueta Entorno de todos los recursos
+environment = "lab"
+
+# Tipo de instancia de la EC2 de datos (MySQL y Redis en Docker)
+data_instance_type = "t3.small"
+
+# CIDR con acceso SSH a la EC2 de datos; vacío no abre el puerto 22
+ssh_allowed_cidr = ""
+
+# Tareas por servicio ECS
+desired_count = 1
