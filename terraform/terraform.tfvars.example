@@ -12,3 +12,38 @@ ssh_allowed_cidr = ""
 
 # Tareas por servicio ECS
 desired_count = 1
+
+# --- Variables opcionales (descomenta lo que necesites) ---
+
+# Subnets propias para ALB, VPC Link y servicios; vacío descubre 2 subnets por defecto (1a y 1b)
+# service_subnet_ids = ["subnet-0417bad5b0d66aab4", "subnet-0d2532066897147a8"]
+
+# Key pair para entrar por SSH a la EC2 de datos
+# data_key_name = "RRHH-CLOUD"
+
+# Asociar una Elastic IP a la EC2 de datos
+# associate_data_eip = true
+
+# Limitar el egress de los security groups ecs y data a MySQL, Redis, HTTPS y DNS
+# restrict_egress = true
+
+# Agregar el capacity provider de ECS Managed Instances al cluster (el lab puede no permitirlo)
+# enable_managed_instances = true
+
+# Entregar la contraseña de la base por environment en lugar de SSM (menos seguro)
+# use_ssm_secrets = false
+
+# Tags de imagen distintos del nombre corto del servicio
+# image_tag_suffix = { identity = "identity-20261013" }
+
+# Login con Google: el secret va por TF_VAR_google_client_secret, no en este archivo
+# google_client_id = "123456789-abc.apps.googleusercontent.com"
+
+# Prefijo del dominio de Cognito; al adoptar el pool vivo debe ser el que ya existe
+# cognito_domain_prefix = "us-east-1oyyaru7bx"
+
+# Orígenes CORS adicionales del HTTP API
+# extra_cors_origins = ["https://app.ejemplo.cl"]
+
+# Nombre de la rama de Amplify
+# amplify_branch = "staging"
