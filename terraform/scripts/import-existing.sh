@@ -52,12 +52,8 @@ for s in $SERVICES; do
   import "aws_cloudwatch_log_group.svc[\"$s\"]" "/ecs/rrhh-$s"
   tg="$(aws_value elbv2 describe-target-groups --names "rrhh-tg-$s" --query 'TargetGroups[0].TargetGroupArn')"
   import "aws_lb_target_group.svc[\"$s\"]" "$tg"
-  if [ "$s" = "identity" ]; then
-    import aws_ecs_service.identity "$CLUSTER/rrhh-$s"
-  else
-    import "aws_ecs_service.svc[\"$s\"]" "$CLUSTER/rrhh-$s"
-  fi
 done
+echo "AVISO: los servicios ECS vivos se llaman rrhh-identity-service, rrhh-trabajadores, rrhh-contratos-service, rrhh-asistencia-service, rrhh-ausencias-service-<sufijo> y rrhh-notifications-service; Terraform usa rrhh-<servicio> y el nombre de un servicio no se puede cambiar, así que no se importan: borra los vivos antes de aplicar (ver README)." >&2
 
 alb_arn="$(aws_value elbv2 describe-load-balancers --names "$ALB_NAME" --query 'LoadBalancers[0].LoadBalancerArn')"
 import aws_lb.internal "$alb_arn"

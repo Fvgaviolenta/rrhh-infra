@@ -85,6 +85,7 @@ terraform plan -var-file=terraform.tfvars
 
 Antes de importar o de aplicar, revisa esto:
 
+- **Servicios ECS:** los vivos se llaman `rrhh-identity-service`, `rrhh-trabajadores`, `rrhh-contratos-service`, `rrhh-asistencia-service`, `rrhh-ausencias-service-<sufijo>` y `rrhh-notifications-service`; Terraform crea `rrhh-<servicio>`. Como el nombre de un servicio no se puede cambiar, el script no los importa: bórralos (con `--force`) antes del `apply`, o los puertos 8081-8086 quedarán con dos servicios compitiendo por los mismos target groups.
 - **Dominio de Cognito:** el vivo es `us-east-1oyyaru7bx`; pon `cognito_domain_prefix = "us-east-1oyyaru7bx"` en `terraform.tfvars`, o el plan intentará crear otro y reemplazar el vivo.
 - **EC2 de datos:** el script no la importa. La instancia viva tiene otra subnet y otro `user_data`, y el plan la reemplazaría (se pierden los datos de MySQL). Importa con `IMPORT_DATA_EC2=1` solo con un respaldo, o deja que Terraform cree una nueva y migra los datos.
 - **Reglas de los security groups:** Terraform crea sus reglas como recursos aparte y no importa las existentes. Si ya existen reglas iguales, la creación falla por duplicado: revócalas antes en la consola. En `rrhh-sg-data` queda además la regla heredada del puerto de mensajería retirado, que Terraform no administra: bórrala a mano.
