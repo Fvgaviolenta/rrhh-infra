@@ -130,3 +130,32 @@ variable "amplify_branch" {
   type        = string
   default     = "staging"
 }
+
+variable "cognito_deletion_protection" {
+  description = "Protección contra borrado del user pool (ACTIVE o INACTIVE); el pool vivo está en ACTIVE, ponlo en INACTIVE solo para el teardown"
+  type        = string
+  default     = "ACTIVE"
+
+  validation {
+    condition     = contains(["ACTIVE", "INACTIVE"], var.cognito_deletion_protection)
+    error_message = "cognito_deletion_protection debe ser ACTIVE o INACTIVE."
+  }
+}
+
+variable "extra_capacity_providers" {
+  description = "Capacity providers ya adjuntos al cluster que Terraform no administra y no debe quitar (por ejemplo el de Managed Instances creado por la consola)"
+  type        = list(string)
+  default     = []
+}
+
+variable "service_names" {
+  description = "Nombre del servicio ECS por servicio cuando difiere de rrhh-<servicio> (el nombre no se puede cambiar, así que para adoptar los vivos hay que repetirlo)"
+  type        = map(string)
+  default     = {}
+}
+
+variable "data_subnet_id" {
+  description = "Subnet de la EC2 de datos; vacío usa la primera de las 2 subnets elegidas"
+  type        = string
+  default     = ""
+}

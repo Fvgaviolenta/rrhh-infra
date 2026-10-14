@@ -47,3 +47,24 @@ desired_count = 1
 
 # Nombre de la rama de Amplify
 # amplify_branch = "staging"
+
+# --- Adoptar la cuenta viva (valores del lab del 13-10) ---
+
+# Nombres vivos de los servicios ECS (no se pueden cambiar)
+# service_names = {
+#   identity      = "rrhh-identity-service"
+#   trabajadores  = "rrhh-trabajadores"
+#   contratos     = "rrhh-contratos-service"
+#   asistencia    = "rrhh-asistencia-service"
+#   ausencias     = "rrhh-ausencias-service-6l5mliz9"
+#   notifications = "rrhh-notifications-service"
+# }
+
+# Capacity provider de Managed Instances creado por la consola
+# extra_capacity_providers = ["Infra-ECS-Cluster-rrhh-ManagedInstancesCapacityProvider"]
+
+# Subnet de la EC2 de datos viva (1d)
+# data_subnet_id = "subnet-0de6f3771ccbe252c"
+
+# Protección contra borrado del pool; INACTIVE solo para el teardown
+# cognito_deletion_protection = "ACTIVE"

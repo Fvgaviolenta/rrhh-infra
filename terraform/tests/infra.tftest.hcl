@@ -389,3 +389,77 @@ run "subnet_guard_fails_with_six_subnets" {
 
   expect_failures = [terraform_data.subnet_guard]
 }
+
+run "client_allows_srp_because_the_frontend_logs_in_with_it" {
+  command = plan
+
+  assert {
+    condition     = contains(aws_cognito_user_pool_client.spa.explicit_auth_flows, "ALLOW_USER_SRP_AUTH") && contains(aws_cognito_user_pool_client.spa.explicit_auth_flows, "ALLOW_REFRESH_TOKEN_AUTH")
+    error_message = "cognitoAuth.ts usa authenticateUser sin fijar el flujo (SRP): el client debe permitirlo"
+  }
+}
+
+run "pool_is_protected_from_deletion_by_default" {
+  command = plan
+
+  assert {
+    condition     = aws_cognito_user_pool.main.deletion_protection == "ACTIVE"
+    error_message = "el pool vivo tiene deletion_protection ACTIVE"
+  }
+}
+
+run "pool_deletion_protection_can_be_turned_off" {
+  command = plan
+
+  variables {
+    cognito_deletion_protection = "INACTIVE"
+  }
+
+  assert {
+    condition     = aws_cognito_user_pool.main.deletion_protection == "INACTIVE"
+    error_message = "para el teardown se puede apagar la protección"
+  }
+}
+
+run "live_managed_capacity_provider_can_stay_attached" {
+  command = plan
+
+  variables {
+    extra_capacity_providers = ["Infra-ECS-Cluster-rrhh-ManagedInstancesCapacityProvider"]
+  }
+
+  assert {
+    condition     = contains(aws_ecs_cluster_capacity_providers.rrhh.capacity_providers, "Infra-ECS-Cluster-rrhh-ManagedInstancesCapacityProvider") && contains(aws_ecs_cluster_capacity_providers.rrhh.capacity_providers, "FARGATE")
+    error_message = "el provider creado por la consola no debe quitarse al aplicar"
+  }
+}
+
+run "service_names_default_to_prefix_and_can_match_live_names" {
+  command = plan
+
+  variables {
+    service_names = {
+      identity      = "rrhh-identity-service"
+      trabajadores  = "rrhh-trabajadores"
+      notifications = "rrhh-notifications-service"
+    }
+  }
+
+  assert {
+    condition     = aws_ecs_service.identity.name == "rrhh-identity-service" && aws_ecs_service.svc["trabajadores"].name == "rrhh-trabajadores" && aws_ecs_service.svc["notifications"].name == "rrhh-notifications-service" && aws_ecs_service.svc["contratos"].name == "rrhh-contratos"
+    error_message = "service_names fija el nombre vivo; sin entrada se usa rrhh-<servicio>"
+  }
+}
+
+run "data_instance_subnet_can_be_pinned" {
+  command = plan
+
+  variables {
+    data_subnet_id = "subnet-0de6f3771ccbe252c"
+  }
+
+  assert {
+    condition     = aws_instance.data.subnet_id == "subnet-0de6f3771ccbe252c"
+    error_message = "la EC2 de datos viva está en la subnet 1d; debe poder fijarse"
+  }
+}

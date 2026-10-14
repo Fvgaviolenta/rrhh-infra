@@ -11,7 +11,7 @@ resource "aws_cognito_user_pool" "main" {
   username_attributes      = ["email"]
   auto_verified_attributes = ["email"]
   mfa_configuration        = "OFF"
-  deletion_protection      = "INACTIVE"
+  deletion_protection      = var.cognito_deletion_protection
   user_pool_tier           = "ESSENTIALS"
 
   admin_create_user_config {
@@ -24,6 +24,12 @@ resource "aws_cognito_user_pool" "main" {
     require_uppercase = true
     require_numbers   = true
     require_symbols   = true
+  }
+
+  # El pool vivo conserva custom:tenat_id (con el typo) y Cognito no permite quitar atributos del
+  # esquema: sin esto, importar el pool propone reemplazarlo y se pierden los usuarios.
+  lifecycle {
+    ignore_changes = [schema]
   }
 
   dynamic "schema" {
@@ -76,7 +82,8 @@ resource "aws_cognito_user_pool_client" "spa" {
 
   generate_secret = false
 
-  explicit_auth_flows = ["ALLOW_USER_PASSWORD_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
+  # El frontend (amazon-cognito-identity-js) inicia sesión con SRP; PASSWORD_AUTH queda por compatibilidad.
+  explicit_auth_flows = ["ALLOW_USER_SRP_AUTH", "ALLOW_USER_PASSWORD_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
 
   allowed_oauth_flows_user_pool_client = true
   allowed_oauth_flows                  = ["code"]

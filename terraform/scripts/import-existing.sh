@@ -52,8 +52,16 @@ for s in $SERVICES; do
   import "aws_cloudwatch_log_group.svc[\"$s\"]" "/ecs/rrhh-$s"
   tg="$(aws_value elbv2 describe-target-groups --names "rrhh-tg-$s" --query 'TargetGroups[0].TargetGroupArn')"
   import "aws_lb_target_group.svc[\"$s\"]" "$tg"
+  # El nombre vivo puede ser rrhh-<servicio>-service o llevar sufijo: se busca por prefijo y debe repetirse en service_names.
+  live="$(aws_value ecs list-services --cluster "$CLUSTER" --query "serviceArns[?contains(@, '/rrhh-$s')] | [0]")"
+  live="${live##*/}"
+  if [ "$s" = "identity" ]; then
+    import aws_ecs_service.identity "${live:+$CLUSTER/$live}"
+  else
+    import "aws_ecs_service.svc[\"$s\"]" "${live:+$CLUSTER/$live}"
+  fi
 done
-echo "AVISO: los servicios ECS vivos se llaman rrhh-identity-service, rrhh-trabajadores, rrhh-contratos-service, rrhh-asistencia-service, rrhh-ausencias-service-<sufijo> y rrhh-notifications-service; Terraform usa rrhh-<servicio> y el nombre de un servicio no se puede cambiar, así que no se importan: borra los vivos antes de aplicar (ver README)." >&2
+echo "AVISO: repite en service_names (terraform.tfvars) el nombre vivo de cada servicio; si no coincide, el plan propone reemplazarlo." >&2
 
 alb_arn="$(aws_value elbv2 describe-load-balancers --names "$ALB_NAME" --query 'LoadBalancers[0].LoadBalancerArn')"
 import aws_lb.internal "$alb_arn"

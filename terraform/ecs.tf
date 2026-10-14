@@ -39,6 +39,9 @@ locals {
     { name = "SPRING_DATASOURCE_PASSWORD", valueFrom = aws_ssm_parameter.db_password.arn }
   ] : []
 
+  # El nombre de un servicio ECS no se puede cambiar: service_names permite repetir el vivo al importar.
+  service_names = { for k, s in local.services : k => lookup(var.service_names, k, "${local.name}-${k}") }
+
   other_services = { for k, s in local.services : k => s if k != "identity" }
 }
 
@@ -85,6 +88,7 @@ resource "aws_ecs_cluster_capacity_providers" "rrhh" {
   capacity_providers = concat(
     ["FARGATE", "FARGATE_SPOT"],
     aws_ecs_capacity_provider.managed[*].name,
+    var.extra_capacity_providers,
   )
 
   default_capacity_provider_strategy {
@@ -129,7 +133,7 @@ resource "aws_ecs_task_definition" "svc" {
 
 # identity va primero y espera estado estable; los otros cinco dependen de él (ver aws_ecs_service.svc).
 resource "aws_ecs_service" "identity" {
-  name                              = "${local.name}-identity"
+  name                              = local.service_names["identity"]
   cluster                           = aws_ecs_cluster.rrhh.id
   task_definition                   = aws_ecs_task_definition.svc["identity"].arn
   desired_count                     = var.desired_count
@@ -160,7 +164,7 @@ resource "aws_ecs_service" "identity" {
 resource "aws_ecs_service" "svc" {
   for_each = local.other_services
 
-  name                              = "${local.name}-${each.key}"
+  name                              = local.service_names[each.key]
   cluster                           = aws_ecs_cluster.rrhh.id
   task_definition                   = aws_ecs_task_definition.svc[each.key].arn
   desired_count                     = var.desired_count
