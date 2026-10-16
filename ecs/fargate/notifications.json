@@ -21,12 +21,10 @@
         { "name": "COGNITO_ISSUER", "value": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_OyyaRU7Bx" },
         { "name": "SPRING_FLYWAY_BASELINE_ON_MIGRATE", "value": "true" },
         { "name": "SPRING_FLYWAY_BASELINE_VERSION", "value": "0" },
-        { "name": "RABBITMQ_HOST", "value": "172.31.88.7" },
-        { "name": "RABBITMQ_PORT", "value": "5672" },
-        { "name": "RABBITMQ_USERNAME", "value": "rrhh" },
-        { "name": "RABBITMQ_PASSWORD", "value": "rrhh_local" },
         { "name": "REDIS_HOST", "value": "172.31.88.7" },
-        { "name": "REDIS_PORT", "value": "6379" }
+        { "name": "REDIS_PORT", "value": "6379" },
+        { "name": "SQS_EVENTS_QUEUE_URL", "value": "https://sqs.us-east-1.amazonaws.com/896111715671/rrhh-notifications-events" },
+        { "name": "AWS_REGION", "value": "us-east-1" }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
