@@ -1,0 +1,23 @@
+[
+  { "priority": 5, "path": "/api/v1/plataforma/tenants/*/trabajadores*", "tg": "rrhh-tg-trabajadores", "port": 8082 },
+  { "priority": 6, "path": "/api/v1/plataforma/tenants/*/contratos*", "tg": "rrhh-tg-contratos", "port": 8083 },
+  { "priority": 7, "path": "/api/v1/plataforma/tenants/*/ausencias*", "tg": "rrhh-tg-ausencias", "port": 8085 },
+  { "priority": 8, "path": "/api/v1/plataforma/tenants/*/notificaciones*", "tg": "rrhh-tg-notifications", "port": 8086 },
+  { "priority": 10, "path": "/api/v1/auth*", "tg": "rrhh-tg-identity", "port": 8081 },
+  { "priority": 11, "path": "/api/v1/usuarios*", "tg": "rrhh-tg-identity", "port": 8081 },
+  { "priority": 12, "path": "/api/v1/tenants*", "tg": "rrhh-tg-identity", "port": 8081 },
+  { "priority": 13, "path": "/api/v1/plataforma*", "tg": "rrhh-tg-identity", "port": 8081 },
+  { "priority": 20, "path": "/api/v1/trabajadores*", "tg": "rrhh-tg-trabajadores", "port": 8082 },
+  { "priority": 21, "path": "/api/v1/departamentos*", "tg": "rrhh-tg-trabajadores", "port": 8082 },
+  { "priority": 22, "path": "/api/v1/cargos*", "tg": "rrhh-tg-trabajadores", "port": 8082 },
+  { "priority": 30, "path": "/api/v1/contratos*", "tg": "rrhh-tg-contratos", "port": 8083 },
+  { "priority": 31, "path": "/api/v1/liquidaciones*", "tg": "rrhh-tg-contratos", "port": 8083 },
+  { "priority": 40, "path": "/api/v1/asistencia*", "tg": "rrhh-tg-asistencia", "port": 8084 },
+  { "priority": 41, "path": "/api/v1/marcas-asistencia*", "tg": "rrhh-tg-asistencia", "port": 8084 },
+  { "priority": 42, "path": "/api/v1/turnos*", "tg": "rrhh-tg-asistencia", "port": 8084 },
+  { "priority": 43, "path": "/api/v1/jornadas*", "tg": "rrhh-tg-asistencia", "port": 8084 },
+  { "priority": 44, "path": "/api/v1/horas-extra*", "tg": "rrhh-tg-asistencia", "port": 8084 },
+  { "priority": 50, "path": "/api/v1/ausencias*", "tg": "rrhh-tg-ausencias", "port": 8085 },
+  { "priority": 51, "path": "/api/v1/solicitudes-ausencia*", "tg": "rrhh-tg-ausencias", "port": 8085 },
+  { "priority": 60, "path": "/api/v1/notificaciones*", "tg": "rrhh-tg-notifications", "port": 8086 }
+]

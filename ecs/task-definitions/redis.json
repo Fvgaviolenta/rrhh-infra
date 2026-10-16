@@ -1,0 +1,16 @@
+{
+  "family": "rrhh-redis",
+  "requiresCompatibilities": ["EC2"],
+  "networkMode": "host",
+  "containerDefinitions": [
+    {
+      "name": "redis",
+      "image": "redis:7-alpine",
+      "memory": 128,
+      "essential": true,
+      "portMappings": [
+        { "containerPort": 6379, "hostPort": 6379, "protocol": "tcp" }
+      ]
+    }
+  ]
+}

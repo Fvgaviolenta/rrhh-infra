@@ -1,0 +1,24 @@
+{
+  "family": "rrhh-ausencias",
+  "requiresCompatibilities": ["EC2"],
+  "networkMode": "host",
+  "containerDefinitions": [
+    {
+      "name": "rrhh-ausencias",
+      "image": "ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/rrhh:ausencias",
+      "memory": 384,
+      "essential": true,
+      "portMappings": [
+        { "containerPort": 8085, "hostPort": 8085, "protocol": "tcp" }
+      ],
+      "environment": [
+        { "name": "SPRING_PROFILES_ACTIVE", "value": "cognito" },
+        { "name": "SERVER_PORT", "value": "8085" },
+        { "name": "SPRING_DATASOURCE_URL", "value": "jdbc:mysql://127.0.0.1:3306/rrhh_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC" },
+        { "name": "SPRING_DATASOURCE_USERNAME", "value": "rrhh" },
+        { "name": "SPRING_DATASOURCE_PASSWORD", "value": "rrhh_local" },
+        { "name": "COGNITO_ISSUER", "value": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_REPLACE" }
+      ]
+    }
+  ]
+}
