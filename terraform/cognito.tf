@@ -124,3 +124,13 @@ resource "aws_cognito_user_pool_client" "spa" {
 
   depends_on = [aws_cognito_identity_provider.google]
 }
+
+# Un app client creado por API no trae estilo de managed login (la consola sí lo crea): sin este recurso
+# las páginas de Cognito (login federado, logout) no se pueden usar con el dominio en versión 2.
+resource "aws_cognito_managed_login_branding" "spa" {
+  user_pool_id                = aws_cognito_user_pool.main.id
+  client_id                   = aws_cognito_user_pool_client.spa.id
+  use_cognito_provided_values = true
+
+  depends_on = [aws_cognito_user_pool_domain.main]
+}

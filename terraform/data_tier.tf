@@ -26,13 +26,20 @@ resource "aws_instance" "data" {
     db_name           = var.db_name
     db_user           = var.db_user
     db_password_param = aws_ssm_parameter.db_password.name
+    ready_param       = local.data_ready_param
   })
 
   tags = {
     Name = "${local.name}-data"
   }
 
-  depends_on = [aws_ssm_parameter.db_password]
+  # Las reglas de salida son recursos aparte: sin ellas el script de arranque no llega a SSM ni a Docker Hub
+  # (Terraform quita la salida abierta que AWS agrega a un security group nuevo).
+  depends_on = [
+    aws_ssm_parameter.db_password,
+    aws_vpc_security_group_egress_rule.data_open,
+    aws_vpc_security_group_egress_rule.data_world,
+  ]
 
   # El parámetro público apunta siempre al AMI más nuevo; sin esto, un AMI nuevo reemplaza la
   # instancia y se pierde el volumen de MySQL que vive en su disco raíz.
@@ -46,4 +53,38 @@ resource "aws_eip" "data" {
 
   instance = aws_instance.data.id
   domain   = "vpc"
+}
+
+locals {
+  data_ready_param = "/${local.name}/data/ready"
+}
+
+# La EC2 publica este parámetro cuando MySQL acepta conexiones y Redis responde; aquí se espera y se borra.
+# Los servicios ECS dependen de este recurso para no arrancar antes que la base.
+resource "terraform_data" "data_ready" {
+  count = var.wait_for_data ? 1 : 0
+
+  triggers_replace = aws_instance.data.id
+
+  provisioner "local-exec" {
+    interpreter = ["bash", "-c"]
+
+    environment = {
+      AWS_REGION  = var.region
+      READY_PARAM = local.data_ready_param
+    }
+
+    command = <<-EOT
+      for i in $(seq 1 90); do
+        if aws ssm get-parameter --region "$AWS_REGION" --name "$READY_PARAM" >/dev/null 2>&1; then
+          aws ssm delete-parameter --region "$AWS_REGION" --name "$READY_PARAM" >/dev/null
+          echo "MySQL y Redis listos"
+          exit 0
+        fi
+        sleep 10
+      done
+      echo "MySQL y Redis no avisaron en 15 minutos; revisa /var/log/cloud-init-output.log en la EC2 de datos" >&2
+      exit 1
+    EOT
+  }
 }

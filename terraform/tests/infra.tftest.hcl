@@ -1,5 +1,8 @@
 variables {
   db_password = "x"
+
+  # Las pruebas con command = apply ejecutarían el local-exec de verdad (consulta SSM real): sin espera.
+  wait_for_data = false
 }
 
 mock_provider "aws" {
@@ -461,5 +464,45 @@ run "data_instance_subnet_can_be_pinned" {
   assert {
     condition     = aws_instance.data.subnet_id == "subnet-0de6f3771ccbe252c"
     error_message = "la EC2 de datos viva está en la subnet 1d; debe poder fijarse"
+  }
+}
+
+run "client_has_a_managed_login_style" {
+  command = plan
+
+  assert {
+    condition     = aws_cognito_managed_login_branding.spa.use_cognito_provided_values == true
+    error_message = "el app client necesita un estilo de managed login (los clients creados por API no lo traen)"
+  }
+}
+
+run "services_wait_for_the_data_tier_by_default" {
+  command = plan
+
+  variables {
+    wait_for_data = true
+  }
+
+  assert {
+    condition     = length(terraform_data.data_ready) == 1
+    error_message = "por defecto Terraform espera la señal de MySQL y Redis antes de crear los servicios"
+  }
+
+  assert {
+    condition     = strcontains(aws_instance.data.user_data, "ssm put-parameter") && strcontains(aws_instance.data.user_data, "/rrhh/data/ready")
+    error_message = "la EC2 de datos debe publicar el parámetro de listo al terminar"
+  }
+}
+
+run "data_wait_can_be_disabled" {
+  command = plan
+
+  variables {
+    wait_for_data = false
+  }
+
+  assert {
+    condition     = length(terraform_data.data_ready) == 0
+    error_message = "con wait_for_data = false no se espera la señal (EC2 de datos adoptada)"
   }
 }

@@ -159,3 +159,9 @@ variable "data_subnet_id" {
   type        = string
   default     = ""
 }
+
+variable "wait_for_data" {
+  description = "Esperar (con AWS CLI y bash en la máquina que aplica) a que MySQL y Redis estén listos antes de crear los servicios ECS; false al adoptar una EC2 de datos existente, que nunca publica la señal"
+  type        = bool
+  default     = true
+}

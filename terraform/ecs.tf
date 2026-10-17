@@ -158,7 +158,7 @@ resource "aws_ecs_service" "identity" {
     rollback = true
   }
 
-  depends_on = [aws_lb_listener.http, aws_ecs_cluster_capacity_providers.rrhh]
+  depends_on = [aws_lb_listener.http, aws_ecs_cluster_capacity_providers.rrhh, terraform_data.data_ready]
 }
 
 resource "aws_ecs_service" "svc" {
