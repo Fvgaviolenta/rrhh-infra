@@ -28,4 +28,18 @@ docker run -d --name redis --restart unless-stopped \
   -p 6379:6379 \
   redis:7-alpine
 
+# Avisa a Terraform cuando MySQL acepta conexiones con el usuario de la aplicación y Redis responde.
+READY=""
+for attempt in $(seq 1 60); do
+  if docker exec mysql mysql -u"${db_user}" -p"$DB_PASSWORD" "${db_name}" -e "select 1" >/dev/null 2>&1 \
+    && [ "$(docker exec redis redis-cli ping 2>/dev/null)" = "PONG" ]; then
+    READY=1
+    break
+  fi
+  sleep 5
+done
+[ -n "$READY" ] || { echo "MySQL o Redis no respondieron a tiempo" >&2; exit 1; }
+
+aws ssm put-parameter --region "${region}" --name "${ready_param}" --type String --value ready --overwrite
+
 unset DB_PASSWORD

@@ -4,9 +4,9 @@ Crea la arquitectura completa del lab en `us-east-1`: red y security groups, EC2
 
 ## Requisitos
 
-- Terraform `>= 1.7` (probado con 1.16.5) y proveedor `hashicorp/aws ~> 6.0`.
+- Terraform `>= 1.11` (las pruebas usan `override_during`, que 1.10 no reconoce; `terraform test` verificado con 1.11.4 y 1.14.0) y proveedor `hashicorp/aws ~> 6.0`.
 - Credenciales del Learner Lab en `~/.aws/credentials` (`aws_access_key_id`, `aws_secret_access_key`, `aws_session_token`). Caducan con la sesión: si aparece `ExpiredToken`, pega las nuevas y repite.
-- AWS CLI, solo para `scripts/import-existing.sh` y para subir el frontend.
+- AWS CLI y `bash` en la máquina que aplica: los usan `scripts/import-existing.sh`, la subida del frontend y la espera de MySQL (`terraform_data.data_ready`, desactivable con `wait_for_data = false`).
 
 ## Mapa de archivos
 
@@ -17,7 +17,7 @@ Crea la arquitectura completa del lab en `us-east-1`: red y security groups, EC2
 | `data_tier.tf`, `secrets.tf`, `templates/` | EC2 de datos y contraseña de la base en SSM `SecureString` |
 | `alb.tf` | ALB interno, 6 target groups y reglas de `../alb/listener-rules.json` |
 | `sqs.tf` | Cola de eventos y DLQ (5 recepciones) |
-| `cognito.tf`, `amplify.tf` | User pool, dominio, app client público y app de Amplify |
+| `cognito.tf`, `amplify.tf` | User pool, dominio, app client público, su estilo de managed login y app de Amplify |
 | `ecr.tf`, `ecs.tf` | Repositorio `rrhh`, log groups, cluster, task definitions y servicios |
 | `apigw.tf`, `outputs.tf` | VPC Link, HTTP API y salidas (incluye `vite_env`) |
 | `tests/infra.tftest.hcl` | Pruebas con `mock_provider`, no tocan la cuenta |
@@ -43,7 +43,7 @@ terraform test
 
 Los servicios ECS necesitan imágenes en ECR, así que la primera vez se aplica en dos tiempos:
 
-1. `terraform init && terraform apply -target=aws_ecr_repository.rrhh -target=aws_sqs_queue.events`
+1. `terraform init && terraform apply -target=aws_ecr_repository.rrhh -target=aws_sqs_queue.events -target=aws_instance.data -target=aws_vpc_security_group_egress_rule.data_open -target=aws_vpc_security_group_egress_rule.data_world -target=aws_vpc_security_group_ingress_rule.data_ssh -target=terraform_data.data_ready` (las reglas del security group van aparte porque `-target` no las arrastra; `data_ready` espera hasta 15 minutos a que MySQL y Redis respondan)
 2. Publicar las imágenes con el CI (GitHub Actions) con los tags `identity`, `trabajadores`, `contratos`, `asistencia`, `ausencias` y `notifications`.
 3. `terraform apply`
 
@@ -88,6 +88,7 @@ Antes de importar o de aplicar, revisa esto:
 - **Servicios ECS:** los vivos se llaman `rrhh-identity-service`, `rrhh-trabajadores`, `rrhh-contratos-service`, `rrhh-asistencia-service`, `rrhh-ausencias-service-<sufijo>` y `rrhh-notifications-service`. El nombre de un servicio no se puede cambiar: repítelo en `service_names` (ver `terraform.tfvars.example`) para que el import los adopte sin reemplazo, o bórralos antes del `apply` y deja que Terraform cree `rrhh-<servicio>`.
 - **Capacity provider de la consola:** el cluster vivo tiene `Infra-ECS-Cluster-rrhh-ManagedInstancesCapacityProvider`; ponlo en `extra_capacity_providers` o Terraform intentará quitarlo.
 - **Pool de Cognito:** `ignore_changes = [schema]` evita el reemplazo por `custom:tenat_id`. La protección contra borrado queda `ACTIVE` como el pool vivo: para `terraform destroy` pon antes `cognito_deletion_protection = "INACTIVE"` y aplica.
+- **Espera de MySQL:** una EC2 de datos que ya existe nunca publica la señal de listo (`/rrhh/data/ready`), así que al adoptarla pon `wait_for_data = false` o el `apply` falla a los 15 minutos.
 - **EC2 de datos:** fija `data_subnet_id` (la viva está en `subnet-0de6f3771ccbe252c`) si decides importarla.
 - **Dominio de Cognito:** el vivo es `us-east-1oyyaru7bx`; pon `cognito_domain_prefix = "us-east-1oyyaru7bx"` en `terraform.tfvars`, o el plan intentará crear otro y reemplazar el vivo.
 - **EC2 de datos:** el script no la importa. La instancia viva tiene otra subnet y otro `user_data`, y el plan la reemplazaría (se pierden los datos de MySQL). Importa con `IMPORT_DATA_EC2=1` solo con un respaldo, o deja que Terraform cree una nueva y migra los datos.
