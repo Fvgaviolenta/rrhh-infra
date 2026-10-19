@@ -10,7 +10,7 @@ Configuración de infraestructura local y del laboratorio AWS.
 Arranque local (solo datos) desde la raíz `PROYECTO/`:
 
 ```bash
-docker compose up -d mysql redis rabbitmq
+docker compose up -d mysql redis
 ```
 
 Plan B en el lab (toda la app con los mismos Dockerfiles):
