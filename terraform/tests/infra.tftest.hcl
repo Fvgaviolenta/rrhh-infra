@@ -264,6 +264,26 @@ run "contratos_receives_integration_urls_and_notifications_redis" {
   }
 }
 
+run "sqs_enabled_only_for_producers_and_consumer" {
+  command = apply
+
+  assert {
+    condition = alltrue([
+      for k in ["contratos", "ausencias", "notifications"] :
+      contains([for e in jsondecode(aws_ecs_task_definition.svc[k].container_definitions)[0].environment : "${e.name}=${e.value}"], "RRHH_SQS_ENABLED=true")
+    ])
+    error_message = "contratos, ausencias y notifications necesitan RRHH_SQS_ENABLED=true"
+  }
+
+  assert {
+    condition = alltrue([
+      for k in ["identity", "trabajadores", "asistencia"] :
+      length([for e in jsondecode(aws_ecs_task_definition.svc[k].container_definitions)[0].environment : e if e.name == "RRHH_SQS_ENABLED"]) == 0
+    ])
+    error_message = "identity, trabajadores y asistencia no usan SQS"
+  }
+}
+
 run "db_password_comes_from_ssm_secret" {
   command = apply
 

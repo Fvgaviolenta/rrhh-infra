@@ -116,7 +116,7 @@ resource "aws_ecs_task_definition" "svc" {
     environment = concat(
       local.base_env[each.key],
       local.extra_env[each.key],
-      local.sqs_env,
+      local.sqs_env[each.key],
       local.db_password_env,
     )
     secrets = local.db_password_secrets

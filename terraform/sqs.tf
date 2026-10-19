@@ -27,8 +27,17 @@ resource "aws_sqs_queue_redrive_allow_policy" "events_dlq" {
 }
 
 locals {
-  sqs_env = [
-    { name = "SQS_EVENTS_QUEUE_URL", value = aws_sqs_queue.events.url },
-    { name = "AWS_REGION", value = var.region },
-  ]
+  # Una sola cola: contratos y ausencias publican (outbox), notifications consume.
+  # El código no toca SQS si RRHH_SQS_ENABLED no es "true" (default false en application.yml).
+  sqs_services = ["contratos", "ausencias", "notifications"]
+
+  sqs_env = {
+    for k, s in local.services : k => concat(
+      [
+        { name = "SQS_EVENTS_QUEUE_URL", value = aws_sqs_queue.events.url },
+        { name = "AWS_REGION", value = var.region },
+      ],
+      contains(local.sqs_services, k) ? [{ name = "RRHH_SQS_ENABLED", value = "true" }] : [],
+    )
+  }
 }
