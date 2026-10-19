@@ -118,4 +118,4 @@ No se pudieron comprobar sin aplicar contra la cuenta:
 - Que el prefijo de dominio de Cognito (`rrhh-<cuenta>` por defecto) esté libre.
 - Que `LabRole` pueda ejecutar `cognito-idp:Admin*` desde identity.
 - La conexión JDBC usa `useSSL=false&allowPublicKeyRetrieval=true` (igual que las task definitions vivas): el tráfico a MySQL no va cifrado dentro de la VPC. Activar TLS queda pendiente de probar contra la instancia real.
-- La integración SQS en el código Java (dependencia, listeners, productores) no existe todavía: Terraform entrega la cola y las variables `SQS_EVENTS_QUEUE_URL` y `AWS_REGION`.
+- SQS en el código Java: contratos y ausencias publican con un outbox en MySQL y notifications consume por polling (AWS SDK v2). Terraform entrega `SQS_EVENTS_QUEUE_URL` y `AWS_REGION` a todos, y `RRHH_SQS_ENABLED=true` solo a esos tres; sin esa variable el código no publica ni consume.
