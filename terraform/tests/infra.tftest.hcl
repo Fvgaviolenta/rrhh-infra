@@ -302,6 +302,26 @@ run "identity_gets_sqs_and_platform_env" {
   }
 }
 
+run "platform_admin_email_rejects_empty" {
+  command = plan
+
+  variables {
+    platform_admin_email = ""
+  }
+
+  expect_failures = [var.platform_admin_email]
+}
+
+run "platform_admin_email_rejects_non_email" {
+  command = plan
+
+  variables {
+    platform_admin_email = " owner "
+  }
+
+  expect_failures = [var.platform_admin_email]
+}
+
 run "db_password_comes_from_ssm_secret" {
   command = apply
 
