@@ -106,6 +106,11 @@ variable "google_client_id" {
   default     = ""
 }
 
+variable "platform_admin_email" {
+  description = "Correo Google del AdminPlataforma (ADR-017); su primer login lo promueve"
+  type        = string
+}
+
 variable "google_client_secret" {
   description = "Client secret de Google para el login federado en Cognito"
   type        = string

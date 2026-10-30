@@ -13,6 +13,9 @@ ssh_allowed_cidr = ""
 # Tareas por servicio ECS
 desired_count = 1
 
+# Correo Google del AdminPlataforma (ADR-017), obligatorio: su primer login con Google lo promueve
+# platform_admin_email = "admin@gmail.com"
+
 # --- Variables opcionales (descomenta lo que necesites) ---
 
 # Subnets propias para ALB, VPC Link y servicios; vacío descubre 2 subnets por defecto (1a y 1b)

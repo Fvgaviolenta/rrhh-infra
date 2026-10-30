@@ -1,5 +1,6 @@
 variables {
-  db_password = "x"
+  db_password          = "x"
+  platform_admin_email = "owner@gmail.com"
 
   # Las pruebas con command = apply ejecutarían el local-exec de verdad (consulta SSM real): sin espera.
   wait_for_data = false
@@ -269,18 +270,35 @@ run "sqs_enabled_only_for_producers_and_consumer" {
 
   assert {
     condition = alltrue([
-      for k in ["contratos", "ausencias", "notifications"] :
+      for k in ["identity", "contratos", "ausencias", "notifications"] :
       contains([for e in jsondecode(aws_ecs_task_definition.svc[k].container_definitions)[0].environment : "${e.name}=${e.value}"], "RRHH_SQS_ENABLED=true")
     ])
-    error_message = "contratos, ausencias y notifications necesitan RRHH_SQS_ENABLED=true"
+    error_message = "identity, contratos, ausencias y notifications necesitan RRHH_SQS_ENABLED=true"
   }
 
   assert {
     condition = alltrue([
-      for k in ["identity", "trabajadores", "asistencia"] :
+      for k in ["trabajadores", "asistencia"] :
       length([for e in jsondecode(aws_ecs_task_definition.svc[k].container_definitions)[0].environment : e if e.name == "RRHH_SQS_ENABLED"]) == 0
     ])
-    error_message = "identity, trabajadores y asistencia no usan SQS"
+    error_message = "trabajadores y asistencia no usan SQS"
+  }
+}
+
+run "identity_gets_sqs_and_platform_env" {
+  command = apply
+
+  assert {
+    condition = length([
+      for e in jsondecode(aws_ecs_task_definition.svc["identity"].container_definitions)[0].environment : e
+      if(e.name == "RRHH_SQS_ENABLED" && e.value == "true") || (e.name == "RRHH_PLATFORM_ADMIN_EMAIL" && e.value == "owner@gmail.com") || e.name == "COGNITO_USER_POOL_ID" || e.name == "SQS_EVENTS_QUEUE_URL"
+    ]) == 4
+    error_message = "identity necesita SQS habilitado, el correo del AdminPlataforma y el user pool"
+  }
+
+  assert {
+    condition     = aws_cognito_user_pool.main.admin_create_user_config[0].allow_admin_create_user_only == true
+    error_message = "el autoregistro nativo sigue bloqueado; solo Google o cuentas creadas por un admin"
   }
 }
 

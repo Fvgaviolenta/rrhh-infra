@@ -27,7 +27,7 @@ Las reglas del ALB salen de `../alb/listener-rules.json`; para agregar una ruta 
 
 ## Variables
 
-Todas están en `variables.tf` con descripción. Copia `terraform.tfvars.example` a `terraform.tfvars` (ignorado por git) y ajusta lo necesario. La contraseña de la base (`db_password`) no tiene valor por defecto y no va en archivos: `export TF_VAR_db_password=...`. Lo mismo para `TF_VAR_google_client_secret`; el proveedor Google solo se crea si `google_client_id` y `google_client_secret` están ambos definidos.
+Todas están en `variables.tf` con descripción. Copia `terraform.tfvars.example` a `terraform.tfvars` (ignorado por git) y ajusta lo necesario. La contraseña de la base (`db_password`) no tiene valor por defecto y no va en archivos: `export TF_VAR_db_password=...`. Lo mismo para `TF_VAR_google_client_secret`; el proveedor Google solo se crea si `google_client_id` y `google_client_secret` están ambos definidos. `platform_admin_email` tampoco tiene valor por defecto: es el correo Google del AdminPlataforma (ADR-017), que identity recibe como `RRHH_PLATFORM_ADMIN_EMAIL` y promueve en su primer login.
 
 ## Verificar sin tocar la cuenta
 
