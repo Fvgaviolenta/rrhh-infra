@@ -27,9 +27,9 @@ resource "aws_sqs_queue_redrive_allow_policy" "events_dlq" {
 }
 
 locals {
-  # Una sola cola: contratos y ausencias publican (outbox), notifications consume.
+  # Una sola cola: identity, contratos y ausencias publican (outbox), notifications consume.
   # El código no toca SQS si RRHH_SQS_ENABLED no es "true" (default false en application.yml).
-  sqs_services = ["contratos", "ausencias", "notifications"]
+  sqs_services = ["identity", "contratos", "ausencias", "notifications"]
 
   sqs_env = {
     for k, s in local.services : k => concat(

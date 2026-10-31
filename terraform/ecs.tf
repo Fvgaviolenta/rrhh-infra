@@ -19,7 +19,10 @@ locals {
   }
 
   extra_env = {
-    identity     = []
+    identity = [
+      { name = "RRHH_PLATFORM_ADMIN_EMAIL", value = var.platform_admin_email },
+      { name = "COGNITO_USER_POOL_ID", value = aws_cognito_user_pool.main.id },
+    ]
     trabajadores = []
     contratos = [
       { name = "RRHH_TRABAJADORES_URL", value = "http://${local.alb_dns}" },
