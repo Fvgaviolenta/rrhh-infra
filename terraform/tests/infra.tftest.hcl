@@ -564,3 +564,22 @@ run "data_wait_can_be_disabled" {
     error_message = "con wait_for_data = false no se espera la señal (EC2 de datos adoptada)"
   }
 }
+
+run "kinesis_stream_is_encrypted_with_one_shard" {
+  command = plan
+
+  assert {
+    condition     = aws_kinesis_stream.events.name == "rrhh-events" && aws_kinesis_stream.events.shard_count == 1 && aws_kinesis_stream.events.retention_period == 24 && aws_kinesis_stream.events.stream_mode_details[0].stream_mode == "PROVISIONED"
+    error_message = "rrhh-events: provisioned, 1 shard y retención de 24 h"
+  }
+
+  assert {
+    condition     = aws_kinesis_stream.events.encryption_type == "KMS" && aws_kinesis_stream.events.kms_key_id == "alias/aws/kinesis"
+    error_message = "rrhh-events se cifra con la llave KMS administrada por AWS"
+  }
+
+  assert {
+    condition     = output.kinesis_stream_name == "rrhh-events"
+    error_message = "output kinesis_stream_name debe entregar el nombre del stream"
+  }
+}

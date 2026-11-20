@@ -42,6 +42,16 @@ output "sqs_events_queue_url" {
   value       = aws_sqs_queue.events.url
 }
 
+output "kinesis_stream_name" {
+  description = "Nombre del stream Kinesis de eventos (KINESIS_STREAM_NAME de asistencia)"
+  value       = aws_kinesis_stream.events.name
+}
+
+output "kinesis_stream_arn" {
+  description = "ARN del stream Kinesis de eventos (fuente de los consumidores Lambda)"
+  value       = aws_kinesis_stream.events.arn
+}
+
 output "data_private_ip" {
   description = "IP privada de la EC2 de datos (MySQL y Redis)"
   value       = aws_instance.data.private_ip
