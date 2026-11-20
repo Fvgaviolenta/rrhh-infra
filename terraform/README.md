@@ -1,10 +1,10 @@
 # Terraform de RRHH SaaS en AWS
 
-Crea la arquitectura completa del lab en `us-east-1`: red y security groups, EC2 de datos (MySQL y Redis en Docker), ECR, cluster ECS Fargate con 6 microservicios, ALB interno con 21 reglas de path, HTTP API con JWT, Cognito, Amplify y una cola SQS con DLQ para los eventos. No crea roles ni políticas IAM: usa `LabRole` y `LabInstanceProfile`.
+Crea la arquitectura completa del lab en `us-east-1`: red y security groups, EC2 de datos (MySQL y Redis en Docker), ECR, cluster ECS Fargate con 6 microservicios, ALB interno con 21 reglas de path, HTTP API con JWT, Cognito, Amplify, una cola SQS con DLQ para los eventos y un stream Kinesis `rrhh-events` para las marcas de asistencia (ADR-019). No crea roles ni políticas IAM: usa `LabRole` y `LabInstanceProfile`.
 
 ## Requisitos
 
-- Terraform `>= 1.11` (las pruebas usan `override_during`, que 1.10 no reconoce; `terraform test` verificado con 1.11.4 y 1.14.0) y proveedor `hashicorp/aws ~> 6.0`.
+- Terraform `>= 1.11` (las pruebas usan `override_during`, que 1.10 no reconoce; `terraform test` verificado con 1.11.4, 1.14.0 y 1.16.1) y proveedor `hashicorp/aws ~> 6.0`.
 - Credenciales del Learner Lab en `~/.aws/credentials` (`aws_access_key_id`, `aws_secret_access_key`, `aws_session_token`). Caducan con la sesión: si aparece `ExpiredToken`, pega las nuevas y repite.
 - AWS CLI y `bash` en la máquina que aplica: los usan `scripts/import-existing.sh`, la subida del frontend y la espera de MySQL (`terraform_data.data_ready`, desactivable con `wait_for_data = false`).
 
@@ -17,6 +17,7 @@ Crea la arquitectura completa del lab en `us-east-1`: red y security groups, EC2
 | `data_tier.tf`, `secrets.tf`, `templates/` | EC2 de datos y contraseña de la base en SSM `SecureString` |
 | `alb.tf` | ALB interno, 6 target groups y reglas de `../alb/listener-rules.json` |
 | `sqs.tf` | Cola de eventos y DLQ (5 recepciones) |
+| `kinesis.tf` | Stream `rrhh-events` (1 shard, 24 h, KMS) y variables de asistencia |
 | `cognito.tf`, `amplify.tf` | User pool, dominio, app client público, su estilo de managed login y app de Amplify |
 | `ecr.tf`, `ecs.tf` | Repositorio `rrhh`, log groups, cluster, task definitions y servicios |
 | `apigw.tf`, `outputs.tf` | VPC Link, HTTP API y salidas (incluye `vite_env`) |
@@ -43,7 +44,7 @@ terraform test
 
 Los servicios ECS necesitan imágenes en ECR, así que la primera vez se aplica en dos tiempos:
 
-1. `terraform init && terraform apply -target=aws_ecr_repository.rrhh -target=aws_sqs_queue.events -target=aws_instance.data -target=aws_vpc_security_group_egress_rule.data_open -target=aws_vpc_security_group_egress_rule.data_world -target=aws_vpc_security_group_ingress_rule.data_ssh -target=terraform_data.data_ready` (las reglas del security group van aparte porque `-target` no las arrastra; `data_ready` espera hasta 15 minutos a que MySQL y Redis respondan)
+1. `terraform init && terraform apply -target=aws_ecr_repository.rrhh -target=aws_sqs_queue.events -target=aws_kinesis_stream.events -target=aws_instance.data -target=aws_vpc_security_group_egress_rule.data_open -target=aws_vpc_security_group_egress_rule.data_world -target=aws_vpc_security_group_ingress_rule.data_ssh -target=terraform_data.data_ready` (las reglas del security group van aparte porque `-target` no las arrastra; `data_ready` espera hasta 15 minutos a que MySQL y Redis respondan)
 2. Publicar las imágenes con el CI (GitHub Actions) con los tags `identity`, `trabajadores`, `contratos`, `asistencia`, `ausencias` y `notifications`.
 3. `terraform apply`
 
@@ -114,8 +115,10 @@ No se pudieron comprobar sin aplicar contra la cuenta:
 
 - Que el lab permita un cluster solo Fargate (si exige Managed Instances, usa `enable_managed_instances = true`; el proveedor `~> 6.0` soporta `managed_instances_provider`).
 - Que las tareas Fargate puedan publicar y consumir de SQS con `LabRole`.
+- Crear el stream Kinesis con `terraform apply`: el 2026-11-13 se probó con la API y con CloudFormation, con el mismo `LabRole` (escritura, Lambda con event source mapping y enhanced fan-out funcionaron).
 - Que `LabRole` pueda leer el `SecureString` de SSM y descifrarlo con KMS al arrancar las tareas y la EC2.
 - Que el prefijo de dominio de Cognito (`rrhh-<cuenta>` por defecto) esté libre.
 - Que `LabRole` pueda ejecutar `cognito-idp:Admin*` desde identity.
 - La conexión JDBC usa `useSSL=false&allowPublicKeyRetrieval=true` (igual que las task definitions vivas): el tráfico a MySQL no va cifrado dentro de la VPC. Activar TLS queda pendiente de probar contra la instancia real.
-- SQS en el código Java: contratos y ausencias publican con un outbox en MySQL y notifications consume por polling (AWS SDK v2). Terraform entrega `SQS_EVENTS_QUEUE_URL` y `AWS_REGION` a todos, y `RRHH_SQS_ENABLED=true` solo a esos tres; sin esa variable el código no publica ni consume.
+- SQS en el código Java: identity, contratos y ausencias publican con un outbox en MySQL y notifications consume por polling (AWS SDK v2). Terraform entrega `SQS_EVENTS_QUEUE_URL` y `AWS_REGION` a todos, y `RRHH_SQS_ENABLED=true` solo a los cuatro de `local.sqs_services` (identity, contratos, ausencias y notifications); sin esa variable el código no publica ni consume.
+- Kinesis en el código Java: Terraform entrega `KINESIS_STREAM_NAME` y `RRHH_KINESIS_ENABLED=true` solo a asistencia (`local.kinesis_services`); el publicador llega en la fase 2 de la propuesta de streaming. La partition key es `tenant_id`.
