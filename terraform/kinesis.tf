@@ -12,3 +12,16 @@ resource "aws_kinesis_stream" "events" {
     stream_mode = "PROVISIONED"
   }
 }
+
+locals {
+  # Fase 1: solo asistencia publica sus marcas. Ausencias y contratos entran en la fase 6.
+  # El código no toca Kinesis si RRHH_KINESIS_ENABLED no es "true"; AWS_REGION ya llega por sqs_env.
+  kinesis_services = ["asistencia"]
+
+  kinesis_env = {
+    for k, s in local.services : k => contains(local.kinesis_services, k) ? [
+      { name = "KINESIS_STREAM_NAME", value = aws_kinesis_stream.events.name },
+      { name = "RRHH_KINESIS_ENABLED", value = "true" },
+    ] : []
+  }
+}
