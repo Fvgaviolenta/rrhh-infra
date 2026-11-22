@@ -62,6 +62,11 @@ output "stream_metrics_dlq_url" {
   value       = aws_sqs_queue.stream_metrics_dlq.url
 }
 
+output "streaming_dashboard_url" {
+  description = "URL del dashboard de CloudWatch con marcas por minuto, iterator age y DLQ"
+  value       = "https://${var.region}.console.aws.amazon.com/cloudwatch/home?region=${var.region}#dashboards/dashboard/${aws_cloudwatch_dashboard.streaming.dashboard_name}"
+}
+
 output "data_private_ip" {
   description = "IP privada de la EC2 de datos (MySQL y Redis)"
   value       = aws_instance.data.private_ip

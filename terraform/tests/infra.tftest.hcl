@@ -656,3 +656,38 @@ run "lambda_uses_lab_role_and_reads_the_stream" {
     error_message = "log group de la Lambda con retención de 1 día"
   }
 }
+
+run "dashboard_shows_marcas_iterator_age_and_dlqs" {
+  command = plan
+
+  assert {
+    condition     = aws_cloudwatch_dashboard.streaming.dashboard_name == "rrhh-streaming" && toset([for w in jsondecode(aws_cloudwatch_dashboard.streaming.dashboard_body).widgets : w.properties.title]) == toset(["Marcas por minuto", "Eventos por tipo", "Iterator age", "Mensajes en las DLQ"])
+    error_message = "rrhh-streaming tiene los 4 widgets de la fase 3"
+  }
+
+  assert {
+    condition = alltrue([
+      for w in jsondecode(aws_cloudwatch_dashboard.streaming.dashboard_body).widgets : w.properties.period == 60
+      ]) && contains([
+      for w in jsondecode(aws_cloudwatch_dashboard.streaming.dashboard_body).widgets : [for m in w.properties.metrics : join(",", slice(m, 0, 4))] if w.properties.title == "Marcas por minuto"
+    ][0], "RRHH/Streaming,Eventos,EventType,asistencia.marca.registrada")
+    error_message = "marcas por minuto sale de RRHH/Streaming Eventos con EventType asistencia.marca.registrada, período 60 s"
+  }
+
+  assert {
+    condition = contains([
+      for w in jsondecode(aws_cloudwatch_dashboard.streaming.dashboard_body).widgets : [for m in w.properties.metrics : join(",", slice(m, 0, 4))] if w.properties.title == "Iterator age"
+    ][0], "AWS/Kinesis,GetRecords.IteratorAgeMilliseconds,StreamName,rrhh-events")
+    error_message = "iterator age del stream rrhh-events"
+  }
+
+  assert {
+    condition     = strcontains(aws_cloudwatch_dashboard.streaming.dashboard_body, "rrhh-notifications-events-dlq") && strcontains(aws_cloudwatch_dashboard.streaming.dashboard_body, "rrhh-stream-metrics-dlq")
+    error_message = "el widget de DLQ muestra las dos colas muertas"
+  }
+
+  assert {
+    condition     = output.streaming_dashboard_url == "https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards/dashboard/rrhh-streaming"
+    error_message = "output streaming_dashboard_url apunta al dashboard"
+  }
+}
