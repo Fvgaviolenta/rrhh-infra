@@ -1,10 +1,10 @@
 # Terraform de RRHH SaaS en AWS
 
-Crea la arquitectura completa del lab en `us-east-1`: red y security groups, EC2 de datos (MySQL y Redis en Docker), ECR, cluster ECS Fargate con 6 microservicios, ALB interno con 21 reglas de path, HTTP API con JWT, Cognito, Amplify, una cola SQS con DLQ para los eventos y un stream Kinesis `rrhh-events` para las marcas de asistencia (ADR-019). No crea roles ni políticas IAM: usa `LabRole` y `LabInstanceProfile`.
+Crea la arquitectura completa del lab en `us-east-1`: red y security groups, EC2 de datos (MySQL y Redis en Docker), ECR, cluster ECS Fargate con 6 microservicios, ALB interno con 21 reglas de path, HTTP API con JWT, Cognito, Amplify, una cola SQS con DLQ para los eventos y un stream Kinesis `rrhh-events` para las marcas de asistencia (ADR-019), una Lambda `rrhh-stream-metrics` que lee el stream y un dashboard de CloudWatch (`rrhh-streaming`). No crea roles ni políticas IAM: usa `LabRole` y `LabInstanceProfile`.
 
 ## Requisitos
 
-- Terraform `>= 1.11` (las pruebas usan `override_during`, que 1.10 no reconoce; `terraform test` verificado con 1.11.4, 1.14.0 y 1.16.1) y proveedor `hashicorp/aws ~> 6.0`.
+- Terraform `>= 1.11` (las pruebas usan `override_during`, que 1.10 no reconoce; `terraform test` verificado con 1.11.4, 1.14.0 y 1.16.1) y proveedores `hashicorp/aws ~> 6.0` y `hashicorp/archive ~> 2.7` (empaqueta la Lambda). Python 3 para las pruebas de `tests/test_*.py`.
 - Credenciales del Learner Lab en `~/.aws/credentials` (`aws_access_key_id`, `aws_secret_access_key`, `aws_session_token`). Caducan con la sesión: si aparece `ExpiredToken`, pega las nuevas y repite.
 - AWS CLI y `bash` en la máquina que aplica: los usan `scripts/import-existing.sh`, la subida del frontend y la espera de MySQL (`terraform_data.data_ready`, desactivable con `wait_for_data = false`).
 
@@ -18,11 +18,16 @@ Crea la arquitectura completa del lab en `us-east-1`: red y security groups, EC2
 | `alb.tf` | ALB interno, 6 target groups y reglas de `../alb/listener-rules.json` |
 | `sqs.tf` | Cola de eventos y DLQ (5 recepciones) |
 | `kinesis.tf` | Stream `rrhh-events` (1 shard, 24 h, KMS) y variables de asistencia |
+| `lambda.tf` | Lambda `rrhh-stream-metrics` (fuera de la VPC, `LabRole`), su log group, la DLQ `rrhh-stream-metrics-dlq` y el event source mapping filtrado por `eventType` |
+| `lambda/stream_metrics/` | Código Python de la Lambda: cuenta marcas por minuto de llegada, empresa y tipo, y las escribe como logs EMF (namespace `RRHH/Streaming`) |
+| `monitoring.tf` | Dashboard `rrhh-streaming`: marcas por minuto, eventos por tipo, iterator age y mensajes en las DLQ |
 | `cognito.tf`, `amplify.tf` | User pool, dominio, app client público, su estilo de managed login y app de Amplify |
 | `ecr.tf`, `ecs.tf` | Repositorio `rrhh`, log groups, cluster, task definitions y servicios |
 | `apigw.tf`, `outputs.tf` | VPC Link, HTTP API y salidas (incluye `vite_env`) |
 | `tests/infra.tftest.hcl` | Pruebas con `mock_provider`, no tocan la cuenta |
+| `tests/test_*.py` | Pruebas Python de la Lambda y del script de carga (sin AWS) |
 | `scripts/import-existing.sh` | Adopta al state lo que ya existe |
+| `scripts/stream-load.sh` | Prueba de carga: escribe marcas sintéticas en `rrhh-events` con `PutRecords` |
 
 Las reglas del ALB salen de `../alb/listener-rules.json`; para agregar una ruta se edita ese archivo.
 
@@ -38,7 +43,10 @@ terraform fmt -check -recursive
 terraform init -backend=false
 terraform validate
 terraform test
+python3 -m unittest discover -s tests -p "test_*.py"
 ```
+
+La Lambda se empaqueta en `terraform/.build/stream-metrics.zip` (ignorado por git) en cada `plan`.
 
 ## Orden de aplicación
 
@@ -46,9 +54,28 @@ Los servicios ECS necesitan imágenes en ECR, así que la primera vez se aplica 
 
 1. `terraform init && terraform apply -target=aws_ecr_repository.rrhh -target=aws_sqs_queue.events -target=aws_kinesis_stream.events -target=aws_instance.data -target=aws_vpc_security_group_egress_rule.data_open -target=aws_vpc_security_group_egress_rule.data_world -target=aws_vpc_security_group_ingress_rule.data_ssh -target=terraform_data.data_ready` (las reglas del security group van aparte porque `-target` no las arrastra; `data_ready` espera hasta 15 minutos a que MySQL y Redis respondan)
 2. Publicar las imágenes con el CI (GitHub Actions) con los tags `identity`, `trabajadores`, `contratos`, `asistencia`, `ausencias` y `notifications`.
-3. `terraform apply`
+3. `terraform apply` (incluye la Lambda `rrhh-stream-metrics` y el dashboard). Para crear solo esas dos piezas sobre un stream ya aplicado: `terraform apply -target=aws_lambda_event_source_mapping.stream_metrics -target=aws_cloudwatch_dashboard.streaming`.
 
 `identity` espera estado estable (`wait_for_steady_state`) y los otros cinco servicios dependen de él. `terraform apply` es manual: este repositorio nunca lo ejecuta por su cuenta.
+
+## Prueba de carga del stream
+
+Con la Lambda y el dashboard aplicados y las credenciales del lab vigentes:
+
+```bash
+bash terraform/scripts/stream-load.sh --dry-run 3   # solo imprime los lotes, no llama a AWS
+bash terraform/scripts/stream-load.sh 3000          # 30 lotes de 100, uno por segundo
+terraform -chdir=terraform output -raw streaming_dashboard_url
+```
+
+El script termina con `<n> enviados, <n> fallidos`. Las marcas van a la empresa ficticia `carga-prueba` (partition key y `tenantId`). Espera unos 2 minutos y abre el dashboard `rrhh-streaming`:
+
+- **Marcas por minuto** sube hasta unas 3000 repartidas en los minutos de la carga.
+- **Iterator age** sube mientras la Lambda procesa y vuelve a 0: el consumidor alcanzó al productor.
+- **Mensajes en las DLQ** queda en 0. Si sube `rrhh-stream-metrics-dlq`, el mensaje trae solo el shard y el rango de sequence numbers: el registro se relee del stream antes de que venza la retención de 24 h.
+- **Eventos por tipo** muestra también `EventosInvalidos`: registros que pasaron el filtro del mapping (un `eventType` de marca) pero que la Lambda no pudo contar, por ejemplo sin `tenantId`. Un registro que no es JSON no calza con el filtro y no llega a la Lambda.
+
+La carga entra directo al stream, sin pasar por el API Gateway ni por asistencia.
 
 ## Variables del frontend
 
@@ -115,6 +142,7 @@ No se pudieron comprobar sin aplicar contra la cuenta:
 
 - Que el lab permita un cluster solo Fargate (si exige Managed Instances, usa `enable_managed_instances = true`; el proveedor `~> 6.0` soporta `managed_instances_provider`).
 - Que las tareas Fargate puedan publicar y consumir de SQS con `LabRole`.
+- Crear la Lambda `rrhh-stream-metrics`, su event source mapping y el dashboard con `terraform apply`: el 2026-11-13 se probó con CloudFormation y el mismo `LabRole` (Lambda, mapping con filtro, bisect, DLQ, EMF y `PutDashboard`).
 - Crear el stream Kinesis con `terraform apply`: el 2026-11-13 se probó con la API y con CloudFormation, con el mismo `LabRole` (escritura, Lambda con event source mapping y enhanced fan-out funcionaron).
 - Que `LabRole` pueda leer el `SecureString` de SSM y descifrarlo con KMS al arrancar las tareas y la EC2.
 - Que el prefijo de dominio de Cognito (`rrhh-<cuenta>` por defecto) esté libre.

@@ -52,6 +52,21 @@ output "kinesis_stream_arn" {
   value       = aws_kinesis_stream.events.arn
 }
 
+output "stream_metrics_function_name" {
+  description = "Nombre de la Lambda que publica las métricas del stream (marcas por minuto)"
+  value       = aws_lambda_function.stream_metrics.function_name
+}
+
+output "stream_metrics_dlq_url" {
+  description = "URL de la DLQ de la Lambda de métricas (lotes que agotaron los reintentos)"
+  value       = aws_sqs_queue.stream_metrics_dlq.url
+}
+
+output "streaming_dashboard_url" {
+  description = "URL del dashboard de CloudWatch con marcas por minuto, iterator age y DLQ"
+  value       = "https://${var.region}.console.aws.amazon.com/cloudwatch/home?region=${var.region}#dashboards/dashboard/${aws_cloudwatch_dashboard.streaming.dashboard_name}"
+}
+
 output "data_private_ip" {
   description = "IP privada de la EC2 de datos (MySQL y Redis)"
   value       = aws_instance.data.private_ip

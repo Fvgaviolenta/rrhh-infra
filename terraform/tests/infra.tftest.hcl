@@ -611,3 +611,83 @@ run "kinesis_enabled_only_for_producers" {
     error_message = "ninguna task definition repite un nombre de variable"
   }
 }
+
+run "lambda_uses_lab_role_and_reads_the_stream" {
+  command = plan
+
+  # Estado propio: las runs con apply anteriores ya crearon el stream con un ARN de mock,
+  # y override_during = plan solo actúa sobre recursos que el plan crea.
+  state_key = "stream_metrics"
+
+  override_resource {
+    target          = aws_kinesis_stream.events
+    override_during = plan
+    values          = { arn = "arn:aws:kinesis:us-east-1:123456789012:stream/rrhh-events" }
+  }
+
+  override_resource {
+    target          = aws_sqs_queue.stream_metrics_dlq
+    override_during = plan
+    values          = { arn = "arn:aws:sqs:us-east-1:123456789012:rrhh-stream-metrics-dlq" }
+  }
+
+  assert {
+    condition     = aws_lambda_function.stream_metrics.function_name == "rrhh-stream-metrics" && aws_lambda_function.stream_metrics.role == "arn:aws:iam::123456789012:role/LabRole" && aws_lambda_function.stream_metrics.runtime == "python3.13" && aws_lambda_function.stream_metrics.handler == "handler.lambda_handler" && aws_lambda_function.stream_metrics.timeout == 30 && aws_lambda_function.stream_metrics.memory_size == 128 && length(aws_lambda_function.stream_metrics.vpc_config) == 0
+    error_message = "rrhh-stream-metrics: LabRole, python3.13, handler.lambda_handler, 30 s, 128 MB y fuera de la VPC"
+  }
+
+  assert {
+    condition     = aws_lambda_event_source_mapping.stream_metrics.event_source_arn == "arn:aws:kinesis:us-east-1:123456789012:stream/rrhh-events" && aws_lambda_event_source_mapping.stream_metrics.starting_position == "LATEST" && aws_lambda_event_source_mapping.stream_metrics.batch_size == 100 && aws_lambda_event_source_mapping.stream_metrics.parallelization_factor == 2 && aws_lambda_event_source_mapping.stream_metrics.bisect_batch_on_function_error == true && aws_lambda_event_source_mapping.stream_metrics.maximum_retry_attempts == 3
+    error_message = "el mapping lee rrhh-events desde LATEST, lotes de 100, paralelismo 2, bisect y 3 reintentos"
+  }
+
+  assert {
+    condition     = aws_lambda_event_source_mapping.stream_metrics.destination_config[0].on_failure[0].destination_arn == "arn:aws:sqs:us-east-1:123456789012:rrhh-stream-metrics-dlq" && aws_sqs_queue.stream_metrics_dlq.sqs_managed_sse_enabled == true && aws_sqs_queue.stream_metrics_dlq.message_retention_seconds == 1209600
+    error_message = "los lotes que agotan reintentos van a la DLQ cifrada rrhh-stream-metrics-dlq (14 días)"
+  }
+
+  assert {
+    condition     = jsondecode(tolist(aws_lambda_event_source_mapping.stream_metrics.filter_criteria[0].filter)[0].pattern).data.eventType == ["asistencia.marca.registrada", "asistencia.editada"]
+    error_message = "el mapping filtra por eventType: solo marcas registradas y editadas"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_log_group.stream_metrics.name == "/aws/lambda/rrhh-stream-metrics" && aws_cloudwatch_log_group.stream_metrics.retention_in_days == 1
+    error_message = "log group de la Lambda con retención de 1 día"
+  }
+}
+
+run "dashboard_shows_marcas_iterator_age_and_dlqs" {
+  command = plan
+
+  assert {
+    condition     = aws_cloudwatch_dashboard.streaming.dashboard_name == "rrhh-streaming" && toset([for w in jsondecode(aws_cloudwatch_dashboard.streaming.dashboard_body).widgets : w.properties.title]) == toset(["Marcas por minuto", "Eventos por tipo", "Iterator age", "Mensajes en las DLQ"])
+    error_message = "rrhh-streaming tiene los 4 widgets de la fase 3"
+  }
+
+  assert {
+    condition = alltrue([
+      for w in jsondecode(aws_cloudwatch_dashboard.streaming.dashboard_body).widgets : w.properties.period == 60
+      ]) && contains([
+      for w in jsondecode(aws_cloudwatch_dashboard.streaming.dashboard_body).widgets : [for m in w.properties.metrics : join(",", slice(m, 0, 4))] if w.properties.title == "Marcas por minuto"
+    ][0], "RRHH/Streaming,Eventos,EventType,asistencia.marca.registrada")
+    error_message = "marcas por minuto sale de RRHH/Streaming Eventos con EventType asistencia.marca.registrada, período 60 s"
+  }
+
+  assert {
+    condition = contains([
+      for w in jsondecode(aws_cloudwatch_dashboard.streaming.dashboard_body).widgets : [for m in w.properties.metrics : join(",", slice(m, 0, 4))] if w.properties.title == "Iterator age"
+    ][0], "AWS/Kinesis,GetRecords.IteratorAgeMilliseconds,StreamName,rrhh-events")
+    error_message = "iterator age del stream rrhh-events"
+  }
+
+  assert {
+    condition     = strcontains(aws_cloudwatch_dashboard.streaming.dashboard_body, "rrhh-notifications-events-dlq") && strcontains(aws_cloudwatch_dashboard.streaming.dashboard_body, "rrhh-stream-metrics-dlq")
+    error_message = "el widget de DLQ muestra las dos colas muertas"
+  }
+
+  assert {
+    condition     = output.streaming_dashboard_url == "https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards/dashboard/rrhh-streaming"
+    error_message = "output streaming_dashboard_url apunta al dashboard"
+  }
+}
