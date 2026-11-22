@@ -16,6 +16,10 @@ ecs/task-definitions/frontend.json
 *.tfvars
 !terraform.tfvars.example
 crash.log
+terraform/.build/
+
+# Python
+__pycache__/
 
 # OS / IDE
 .DS_Store
