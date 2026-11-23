@@ -661,8 +661,8 @@ run "dashboard_shows_marcas_iterator_age_and_dlqs" {
   command = plan
 
   assert {
-    condition     = aws_cloudwatch_dashboard.streaming.dashboard_name == "rrhh-streaming" && toset([for w in jsondecode(aws_cloudwatch_dashboard.streaming.dashboard_body).widgets : w.properties.title]) == toset(["Marcas por minuto", "Eventos por tipo", "Iterator age", "Mensajes en las DLQ"])
-    error_message = "rrhh-streaming tiene los 4 widgets de la fase 3"
+    condition     = aws_cloudwatch_dashboard.streaming.dashboard_name == "rrhh-streaming" && toset([for w in jsondecode(aws_cloudwatch_dashboard.streaming.dashboard_body).widgets : w.properties.title]) == toset(["Marcas por minuto", "Eventos por tipo", "Iterator age", "Mensajes en las DLQ", "Requests por minuto", "Errores 4xx y 5xx", "Latencia p95 por servicio", "Respuestas 4xx del API Gateway"])
+    error_message = "rrhh-streaming tiene los 4 widgets de la fase 3 y los 4 de la fase 5"
   }
 
   assert {
@@ -802,5 +802,22 @@ run "stream_metrics_also_reads_the_api_telemetry" {
   assert {
     condition     = jsondecode(tolist(aws_lambda_event_source_mapping.stream_metrics_telemetry.filter_criteria[0].filter)[0].pattern).data.tipo == ["api.request"]
     error_message = "el mapping de telemetría deja pasar solo tipo api.request"
+  }
+}
+
+run "dashboard_shows_api_telemetry" {
+  command = plan
+
+  assert {
+    condition     = { for w in jsondecode(aws_cloudwatch_dashboard.streaming.dashboard_body).widgets : w.properties.title => w.properties.metrics[0][0].expression if contains(["Requests por minuto", "Errores 4xx y 5xx", "Latencia p95 por servicio"], w.properties.title) } == { "Requests por minuto" = "SEARCH('{RRHH/Streaming,Servicio} MetricName=\"Requests\"', 'Sum', 60)", "Errores 4xx y 5xx" = "SEARCH('{RRHH/Streaming,Servicio,StatusClass} MetricName=\"Requests\" (StatusClass=\"4xx\" OR StatusClass=\"5xx\")', 'Sum', 60)", "Latencia p95 por servicio" = "SEARCH('{RRHH/Streaming,Servicio} MetricName=\"Latencia\"', 'p95', 60)" }
+    error_message = "los tres widgets de telemetría usan las expresiones SEARCH de la spec"
+  }
+  assert {
+    condition     = [for w in jsondecode(aws_cloudwatch_dashboard.streaming.dashboard_body).widgets : join(",", slice(w.properties.metrics[0], 0, 3)) if w.properties.title == "Respuestas 4xx del API Gateway"][0] == "AWS/ApiGateway,4xx,ApiId" && [for w in jsondecode(aws_cloudwatch_dashboard.streaming.dashboard_body).widgets : w.properties.metrics[0][3] if w.properties.title == "Respuestas 4xx del API Gateway"][0] == aws_apigatewayv2_api.http.id && [for w in jsondecode(aws_cloudwatch_dashboard.streaming.dashboard_body).widgets : w.properties.stat if w.properties.title == "Respuestas 4xx del API Gateway"][0] == "Sum"
+    error_message = "los 4xx del API Gateway salen de AWS/ApiGateway 4xx con el ApiId del HTTP API, sumados"
+  }
+  assert {
+    condition     = contains([for w in jsondecode(aws_cloudwatch_dashboard.streaming.dashboard_body).widgets : [for m in w.properties.metrics : join(",", slice(m, 0, 4))] if w.properties.title == "Iterator age"][0], "AWS/Kinesis,GetRecords.IteratorAgeMilliseconds,StreamName,rrhh-api-telemetry")
+    error_message = "iterator age también del stream rrhh-api-telemetry"
   }
 }
