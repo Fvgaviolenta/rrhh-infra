@@ -72,6 +72,7 @@ resource "aws_cloudwatch_dashboard" "streaming" {
           metrics = [
             ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", aws_sqs_queue.events_dlq.name],
             ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", aws_sqs_queue.stream_metrics_dlq.name],
+            ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", aws_sqs_queue.atrasos_dlq.name],
           ]
         }
       }),
