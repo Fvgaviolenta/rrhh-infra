@@ -1,6 +1,6 @@
 # Terraform de RRHH SaaS en AWS
 
-Crea la arquitectura completa del lab en `us-east-1`: red y security groups, EC2 de datos (MySQL y Redis en Docker), ECR, cluster ECS Fargate con 6 microservicios, ALB interno con 21 reglas de path, HTTP API con JWT, Cognito, Amplify, una cola SQS con DLQ para los eventos y un stream Kinesis `rrhh-events` para las marcas de asistencia (ADR-019), una Lambda `rrhh-stream-metrics` que lee el stream, una segunda Lambda `rrhh-atrasos` que avisa por SQS las marcas de entrada tardías y un dashboard de CloudWatch (`rrhh-streaming`). No crea roles ni políticas IAM: usa `LabRole` y `LabInstanceProfile`.
+Crea la arquitectura completa del lab en `us-east-1`: red y security groups, EC2 de datos (MySQL y Redis en Docker), ECR, cluster ECS Fargate con 6 microservicios, ALB interno con 21 reglas de path, HTTP API con JWT, Cognito, Amplify, una cola SQS con DLQ para los eventos un stream Kinesis `rrhh-events` para las marcas de asistencia (ADR-019), un segundo stream `rrhh-api-telemetry` con la telemetría de los requests a asistencia (fase 5), una Lambda `rrhh-stream-metrics` que lee los dos streams, una segunda Lambda `rrhh-atrasos` que avisa por SQS las marcas de entrada tardías y un dashboard de CloudWatch (`rrhh-streaming`). No crea roles ni políticas IAM: usa `LabRole` y `LabInstanceProfile`.
 
 ## Requisitos
 
@@ -17,12 +17,12 @@ Crea la arquitectura completa del lab en `us-east-1`: red y security groups, EC2
 | `data_tier.tf`, `secrets.tf`, `templates/` | EC2 de datos y contraseña de la base en SSM `SecureString` |
 | `alb.tf` | ALB interno, 6 target groups y reglas de `../alb/listener-rules.json` |
 | `sqs.tf` | Cola de eventos y DLQ (5 recepciones) |
-| `kinesis.tf` | Stream `rrhh-events` (1 shard, 24 h, KMS) y variables de asistencia |
-| `lambda.tf` | Lambda `rrhh-stream-metrics` (fuera de la VPC, `LabRole`), su log group, la DLQ `rrhh-stream-metrics-dlq` y el event source mapping filtrado por `eventType` |
-| `lambda/stream_metrics/` | Código Python de la Lambda: cuenta marcas por minuto de llegada, empresa y tipo, y las escribe como logs EMF (namespace `RRHH/Streaming`) |
+| `kinesis.tf` | Streams `rrhh-events` y `rrhh-api-telemetry` (1 shard, 24 h, KMS cada uno) y sus variables para asistencia (`local.kinesis_services` y `local.telemetry_services`) |
+| `lambda.tf` | Lambda `rrhh-stream-metrics` (fuera de la VPC, `LabRole`), su log group, la DLQ `rrhh-stream-metrics-dlq` y dos event source mappings: `rrhh-events` filtrado por `eventType` y `rrhh-api-telemetry` filtrado por `tipo = api.request` |
+| `lambda/stream_metrics/` | Código Python de la Lambda: cuenta marcas por minuto de llegada, empresa y tipo (`Eventos`), y los requests por servicio, clase de status y empresa (`Requests`) con su latencia por servicio y ruta (`Latencia`); todo como logs EMF (namespace `RRHH/Streaming`) |
 | `atrasos.tf` | Lambda `rrhh-atrasos` (fuera de la VPC, `LabRole`), su log group, la DLQ `rrhh-atrasos-dlq` y el event source mapping que solo deja pasar marcas `asistencia.marca.registrada` de tipo `ENTRADA` |
 | `lambda/atrasos/` | Código Python de la Lambda de atrasos: compara la hora local de cada marca de entrada con el inicio del turno más `TOLERANCIA_MINUTOS` y envía `asistencia.atraso.detectado` a la cola `rrhh-notifications-events` |
-| `monitoring.tf` | Dashboard `rrhh-streaming`: marcas por minuto, eventos por tipo, iterator age y mensajes en las DLQ |
+| `monitoring.tf` | Dashboard `rrhh-streaming`: marcas por minuto, eventos por tipo, iterator age de los dos streams, mensajes en las DLQ, requests por minuto, errores 4xx y 5xx, latencia p95 por servicio y respuestas 4xx del API Gateway |
 | `cognito.tf`, `amplify.tf` | User pool, dominio, app client público, su estilo de managed login y app de Amplify |
 | `ecr.tf`, `ecs.tf` | Repositorio `rrhh`, log groups, cluster, task definitions y servicios |
 | `apigw.tf`, `outputs.tf` | VPC Link, HTTP API y salidas (incluye `vite_env`) |
@@ -54,12 +54,17 @@ Las Lambdas se empaquetan en `terraform/.build/stream-metrics.zip` y `terraform/
 
 Los servicios ECS necesitan imágenes en ECR, así que la primera vez se aplica en dos tiempos:
 
-1. `terraform init && terraform apply -target=aws_ecr_repository.rrhh -target=aws_sqs_queue.events -target=aws_kinesis_stream.events -target=aws_instance.data -target=aws_vpc_security_group_egress_rule.data_open -target=aws_vpc_security_group_egress_rule.data_world -target=aws_vpc_security_group_ingress_rule.data_ssh -target=terraform_data.data_ready` (las reglas del security group van aparte porque `-target` no las arrastra; `data_ready` espera hasta 15 minutos a que MySQL y Redis respondan)
+1. `terraform init && terraform apply -target=aws_ecr_repository.rrhh -target=aws_sqs_queue.events -target=aws_kinesis_stream.events -target=aws_kinesis_stream.api_telemetry -target=aws_instance.data -target=aws_vpc_security_group_egress_rule.data_open -target=aws_vpc_security_group_egress_rule.data_world -target=aws_vpc_security_group_ingress_rule.data_ssh -target=terraform_data.data_ready` (las reglas del security group van aparte porque `-target` no las arrastra; `data_ready` espera hasta 15 minutos a que MySQL y Redis respondan)
 2. Publicar las imágenes con el CI (GitHub Actions) con los tags `identity`, `trabajadores`, `contratos`, `asistencia`, `ausencias` y `notifications`.
 3. `terraform apply` (incluye la Lambda `rrhh-stream-metrics` y el dashboard). Para crear solo esas dos piezas sobre un stream ya aplicado: `terraform apply -target=aws_lambda_event_source_mapping.stream_metrics -target=aws_cloudwatch_dashboard.streaming`.
 4. Lambda de atrasos (fase 4): antes de aplicar `aws_lambda_event_source_mapping.atrasos`, despliega la imagen de notifications que entiende `asistencia.atraso.detectado`. Si no, notifications no reconoce el aviso y cada uno termina en `rrhh-notifications-events-dlq` tras 5 recepciones. Con esa imagen corriendo: `terraform apply -target=aws_lambda_event_source_mapping.atrasos -target=aws_cloudwatch_dashboard.streaming`.
+5. Telemetría de APIs (fase 5): `terraform apply -target=aws_kinesis_stream.api_telemetry -target='aws_ecs_service.svc["asistencia"]' -target=aws_lambda_event_source_mapping.stream_metrics_telemetry -target=aws_cloudwatch_dashboard.streaming` (el servicio arrastra su task definition con las variables nuevas). Después, despliega la imagen de asistencia que trae el filtro de telemetría.
 
 La tolerancia del atraso es la variable `TOLERANCIA_MINUTOS` de `aws_lambda_function.atrasos` (5 minutos): una marca de entrada es atraso si llega estrictamente después del inicio del turno más esa tolerancia, en la hora local de la marca. Para cambiarla, edita el valor en `atrasos.tf` y aplica; un valor vacío, no entero o negativo hace fallar el arranque de la función.
+
+### Telemetría de APIs
+
+Cada request terminado en un servicio de `local.telemetry_services` (hoy solo asistencia, el piloto) produce un registro en `rrhh-api-telemetry`: `tipo = "api.request"`, `servicio`, `metodo`, `ruta` (la plantilla de Spring, por ejemplo `/api/v1/asistencia/marcas/{id}`, o `SIN_RUTA`), `status`, `latenciaMs`, `tenantId` (o `null` sin autenticar) y `ocurridoEn`. No trae el cuerpo, los query params, los headers, el token, el `userId`, el email ni el `trabajadorId`, y `/actuator/**` no genera registro. El servicio recibe `TELEMETRY_STREAM_NAME` y `RRHH_TELEMETRY_ENABLED=true`; con la bandera activa y `TELEMETRY_STREAM_NAME` vacío el servicio no arranca. `rrhh-stream-metrics` publica `Requests` (dimensiones `Servicio`, `Servicio`+`StatusClass` y `TenantId`, con `sin-tenant` si no hay empresa) y `Latencia` (`Servicio` y `Servicio`+`Ruta`, hasta 100 valores por documento EMF). Para sumar otro servicio basta agregarlo a `local.telemetry_services`: los widgets usan `SEARCH` por `Servicio` y lo muestran sin tocar el dashboard. Los 429 del throttling del API Gateway no llegan al servicio; se ven en "Respuestas 4xx del API Gateway".
 
 `identity` espera estado estable (`wait_for_steady_state`) y los otros cinco servicios dependen de él. `terraform apply` es manual: este repositorio nunca lo ejecuta por su cuenta.
 
@@ -157,4 +162,7 @@ No se pudieron comprobar sin aplicar contra la cuenta:
 - Que `LabRole` pueda ejecutar `cognito-idp:Admin*` desde identity.
 - La conexión JDBC usa `useSSL=false&allowPublicKeyRetrieval=true` (igual que las task definitions vivas): el tráfico a MySQL no va cifrado dentro de la VPC. Activar TLS queda pendiente de probar contra la instancia real.
 - SQS en el código Java: identity, contratos y ausencias publican con un outbox en MySQL y notifications consume por polling (AWS SDK v2). Terraform entrega `SQS_EVENTS_QUEUE_URL` y `AWS_REGION` a todos, y `RRHH_SQS_ENABLED=true` solo a los cuatro de `local.sqs_services` (identity, contratos, ausencias y notifications); sin esa variable el código no publica ni consume.
-- Kinesis en el código Java: Terraform entrega `KINESIS_STREAM_NAME` y `RRHH_KINESIS_ENABLED=true` solo a asistencia (`local.kinesis_services`); el publicador llega en la fase 2 de la propuesta de streaming. La partition key es `tenant_id`.
+- Kinesis en el código Java: Terraform entrega `KINESIS_STREAM_NAME` y `RRHH_KINESIS_ENABLED=true` solo a asistencia (`local.kinesis_services`); el publicador llega en la fase 2 de la propuesta de streaming. La partition key es `tenant_id`. Para la telemetría (fase 5) entrega `TELEMETRY_STREAM_NAME` y `RRHH_TELEMETRY_ENABLED=true`, también solo a asistencia (`local.telemetry_services`).
+- Que CloudWatch calcule el p95 de "Latencia p95 por servicio" sobre la lista `Latencia` de los documentos EMF que escribe `rrhh-stream-metrics`: la documentación de EMF lo permite, no se probó en el lab.
+- Que `LabRole` escriba en `rrhh-api-telemetry` (KMS) con `PutRecords` desde asistencia, y que el mapping `stream_metrics_telemetry` lo descifre: mismo pendiente que `rrhh-events`.
+- Que `PutDashboard` acepte las tres expresiones `SEARCH` del dashboard (`terraform test` solo comprueba el JSON).
