@@ -691,3 +691,54 @@ run "dashboard_shows_marcas_iterator_age_and_dlqs" {
     error_message = "output streaming_dashboard_url apunta al dashboard"
   }
 }
+
+run "atrasos_lambda_reads_entradas_and_sends_to_the_queue" {
+  command   = plan
+  state_key = "atrasos"
+
+  override_resource {
+    target          = aws_kinesis_stream.events
+    override_during = plan
+    values          = { arn = "arn:aws:kinesis:us-east-1:123456789012:stream/rrhh-events" }
+  }
+  override_resource {
+    target          = aws_sqs_queue.atrasos_dlq
+    override_during = plan
+    values          = { arn = "arn:aws:sqs:us-east-1:123456789012:rrhh-atrasos-dlq" }
+  }
+  override_resource {
+    target          = aws_sqs_queue.events
+    override_during = plan
+    values          = { url = "https://sqs.us-east-1.amazonaws.com/123456789012/rrhh-notifications-events" }
+  }
+
+  assert {
+    condition     = aws_lambda_function.atrasos.function_name == "rrhh-atrasos" && aws_lambda_function.atrasos.role == "arn:aws:iam::123456789012:role/LabRole" && aws_lambda_function.atrasos.runtime == "python3.13" && aws_lambda_function.atrasos.handler == "handler.lambda_handler" && aws_lambda_function.atrasos.timeout == 30 && aws_lambda_function.atrasos.memory_size == 128 && length(aws_lambda_function.atrasos.vpc_config) == 0 && output.atrasos_function_name == "rrhh-atrasos"
+    error_message = "rrhh-atrasos: LabRole, python3.13, handler.lambda_handler, 30 s, 128 MB, fuera de la VPC y con output"
+  }
+  assert {
+    condition     = aws_lambda_function.atrasos.environment[0].variables["SQS_EVENTS_QUEUE_URL"] == "https://sqs.us-east-1.amazonaws.com/123456789012/rrhh-notifications-events" && aws_lambda_function.atrasos.environment[0].variables["TOLERANCIA_MINUTOS"] == "5"
+    error_message = "rrhh-atrasos recibe la URL de rrhh-notifications-events y TOLERANCIA_MINUTOS=5"
+  }
+  assert {
+    condition     = aws_lambda_event_source_mapping.atrasos.event_source_arn == "arn:aws:kinesis:us-east-1:123456789012:stream/rrhh-events" && aws_lambda_event_source_mapping.atrasos.starting_position == "LATEST" && aws_lambda_event_source_mapping.atrasos.batch_size == 100 && aws_lambda_event_source_mapping.atrasos.parallelization_factor == 2 && aws_lambda_event_source_mapping.atrasos.bisect_batch_on_function_error == true && aws_lambda_event_source_mapping.atrasos.maximum_retry_attempts == 3 && aws_lambda_event_source_mapping.atrasos.destination_config[0].on_failure[0].destination_arn == "arn:aws:sqs:us-east-1:123456789012:rrhh-atrasos-dlq"
+    error_message = "el mapping lee rrhh-events desde LATEST, lotes de 100, paralelismo 2, bisect, 3 reintentos y DLQ rrhh-atrasos-dlq"
+  }
+  assert {
+    condition     = jsondecode(tolist(aws_lambda_event_source_mapping.atrasos.filter_criteria[0].filter)[0].pattern).data.eventType == ["asistencia.marca.registrada"] && jsondecode(tolist(aws_lambda_event_source_mapping.atrasos.filter_criteria[0].filter)[0].pattern).data.payload.tipo == ["ENTRADA"]
+    error_message = "el mapping deja pasar solo asistencia.marca.registrada de tipo ENTRADA"
+  }
+  assert {
+    condition     = aws_cloudwatch_log_group.atrasos.name == "/aws/lambda/rrhh-atrasos" && aws_cloudwatch_log_group.atrasos.retention_in_days == 1 && aws_sqs_queue.atrasos_dlq.name == "rrhh-atrasos-dlq" && aws_sqs_queue.atrasos_dlq.sqs_managed_sse_enabled == true && aws_sqs_queue.atrasos_dlq.message_retention_seconds == 1209600
+    error_message = "log group de 1 día y DLQ cifrada de 14 días"
+  }
+}
+
+run "dashboard_dlq_widget_includes_atrasos" {
+  command = plan
+
+  assert {
+    condition     = contains([for w in jsondecode(aws_cloudwatch_dashboard.streaming.dashboard_body).widgets : [for m in w.properties.metrics : m[3]] if w.properties.title == "Mensajes en las DLQ"][0], "rrhh-atrasos-dlq")
+    error_message = "el widget de DLQ muestra rrhh-atrasos-dlq"
+  }
+}
