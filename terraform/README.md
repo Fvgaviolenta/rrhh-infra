@@ -1,6 +1,6 @@
 # Terraform de RRHH SaaS en AWS
 
-Crea la arquitectura completa del lab en `us-east-1`: red y security groups, EC2 de datos (MySQL y Redis en Docker), ECR, cluster ECS Fargate con 6 microservicios, ALB interno con 21 reglas de path, HTTP API con JWT, Cognito, Amplify, una cola SQS con DLQ para los eventos y un stream Kinesis `rrhh-events` para las marcas de asistencia (ADR-019), una Lambda `rrhh-stream-metrics` que lee el stream y un dashboard de CloudWatch (`rrhh-streaming`). No crea roles ni políticas IAM: usa `LabRole` y `LabInstanceProfile`.
+Crea la arquitectura completa del lab en `us-east-1`: red y security groups, EC2 de datos (MySQL y Redis en Docker), ECR, cluster ECS Fargate con 6 microservicios, ALB interno con 21 reglas de path, HTTP API con JWT, Cognito, Amplify, una cola SQS con DLQ para los eventos y un stream Kinesis `rrhh-events` para las marcas de asistencia (ADR-019), una Lambda `rrhh-stream-metrics` que lee el stream, una segunda Lambda `rrhh-atrasos` que avisa por SQS las marcas de entrada tardías y un dashboard de CloudWatch (`rrhh-streaming`). No crea roles ni políticas IAM: usa `LabRole` y `LabInstanceProfile`.
 
 ## Requisitos
 
@@ -20,12 +20,14 @@ Crea la arquitectura completa del lab en `us-east-1`: red y security groups, EC2
 | `kinesis.tf` | Stream `rrhh-events` (1 shard, 24 h, KMS) y variables de asistencia |
 | `lambda.tf` | Lambda `rrhh-stream-metrics` (fuera de la VPC, `LabRole`), su log group, la DLQ `rrhh-stream-metrics-dlq` y el event source mapping filtrado por `eventType` |
 | `lambda/stream_metrics/` | Código Python de la Lambda: cuenta marcas por minuto de llegada, empresa y tipo, y las escribe como logs EMF (namespace `RRHH/Streaming`) |
+| `atrasos.tf` | Lambda `rrhh-atrasos` (fuera de la VPC, `LabRole`), su log group, la DLQ `rrhh-atrasos-dlq` y el event source mapping que solo deja pasar marcas `asistencia.marca.registrada` de tipo `ENTRADA` |
+| `lambda/atrasos/` | Código Python de la Lambda de atrasos: compara la hora local de cada marca de entrada con el inicio del turno más `TOLERANCIA_MINUTOS` y envía `asistencia.atraso.detectado` a la cola `rrhh-notifications-events` |
 | `monitoring.tf` | Dashboard `rrhh-streaming`: marcas por minuto, eventos por tipo, iterator age y mensajes en las DLQ |
 | `cognito.tf`, `amplify.tf` | User pool, dominio, app client público, su estilo de managed login y app de Amplify |
 | `ecr.tf`, `ecs.tf` | Repositorio `rrhh`, log groups, cluster, task definitions y servicios |
 | `apigw.tf`, `outputs.tf` | VPC Link, HTTP API y salidas (incluye `vite_env`) |
 | `tests/infra.tftest.hcl` | Pruebas con `mock_provider`, no tocan la cuenta |
-| `tests/test_*.py` | Pruebas Python de la Lambda y del script de carga (sin AWS) |
+| `tests/test_*.py` | Pruebas Python de las dos Lambdas y del script de carga (sin AWS) |
 | `scripts/import-existing.sh` | Adopta al state lo que ya existe |
 | `scripts/stream-load.sh` | Prueba de carga: escribe marcas sintéticas en `rrhh-events` con `PutRecords` |
 
@@ -46,7 +48,7 @@ terraform test
 python3 -m unittest discover -s tests -p "test_*.py"
 ```
 
-La Lambda se empaqueta en `terraform/.build/stream-metrics.zip` (ignorado por git) en cada `plan`.
+Las Lambdas se empaquetan en `terraform/.build/stream-metrics.zip` y `terraform/.build/atrasos.zip` (ignorados por git) en cada `plan`.
 
 ## Orden de aplicación
 
@@ -55,6 +57,9 @@ Los servicios ECS necesitan imágenes en ECR, así que la primera vez se aplica 
 1. `terraform init && terraform apply -target=aws_ecr_repository.rrhh -target=aws_sqs_queue.events -target=aws_kinesis_stream.events -target=aws_instance.data -target=aws_vpc_security_group_egress_rule.data_open -target=aws_vpc_security_group_egress_rule.data_world -target=aws_vpc_security_group_ingress_rule.data_ssh -target=terraform_data.data_ready` (las reglas del security group van aparte porque `-target` no las arrastra; `data_ready` espera hasta 15 minutos a que MySQL y Redis respondan)
 2. Publicar las imágenes con el CI (GitHub Actions) con los tags `identity`, `trabajadores`, `contratos`, `asistencia`, `ausencias` y `notifications`.
 3. `terraform apply` (incluye la Lambda `rrhh-stream-metrics` y el dashboard). Para crear solo esas dos piezas sobre un stream ya aplicado: `terraform apply -target=aws_lambda_event_source_mapping.stream_metrics -target=aws_cloudwatch_dashboard.streaming`.
+4. Lambda de atrasos (fase 4): antes de aplicar `aws_lambda_event_source_mapping.atrasos`, despliega la imagen de notifications que entiende `asistencia.atraso.detectado`. Si no, notifications no reconoce el aviso y cada uno termina en `rrhh-notifications-events-dlq` tras 5 recepciones. Con esa imagen corriendo: `terraform apply -target=aws_lambda_event_source_mapping.atrasos -target=aws_cloudwatch_dashboard.streaming`.
+
+La tolerancia del atraso es la variable `TOLERANCIA_MINUTOS` de `aws_lambda_function.atrasos` (5 minutos): una marca de entrada es atraso si llega estrictamente después del inicio del turno más esa tolerancia, en la hora local de la marca. Para cambiarla, edita el valor en `atrasos.tf` y aplica; un valor vacío, no entero o negativo hace fallar el arranque de la función.
 
 `identity` espera estado estable (`wait_for_steady_state`) y los otros cinco servicios dependen de él. `terraform apply` es manual: este repositorio nunca lo ejecuta por su cuenta.
 
@@ -143,6 +148,9 @@ No se pudieron comprobar sin aplicar contra la cuenta:
 - Que el lab permita un cluster solo Fargate (si exige Managed Instances, usa `enable_managed_instances = true`; el proveedor `~> 6.0` soporta `managed_instances_provider`).
 - Que las tareas Fargate puedan publicar y consumir de SQS con `LabRole`.
 - Crear la Lambda `rrhh-stream-metrics`, su event source mapping y el dashboard con `terraform apply`: el 2026-11-13 se probó con CloudFormation y el mismo `LabRole` (Lambda, mapping con filtro, bisect, DLQ, EMF y `PutDashboard`).
+- Que el runtime `python3.13` de Lambda traiga la base de zonas horarias para `zoneinfo.ZoneInfo("America/Santiago")`, que usa `rrhh-atrasos`. Si falta, hay que empaquetar `tzdata` en `atrasos.zip`; sin ella cada marca de entrada se descarta como registro inválido.
+- Que `LabRole` pueda hacer `sqs:SendMessage` (`SendMessageBatch`) a `rrhh-notifications-events` desde `rrhh-atrasos`: solo se probó que el event source mapping escribe en una DLQ.
+- Que el event source mapping pueda descifrar el stream KMS (`alias/aws/kinesis`) con `LabRole`, para `rrhh-stream-metrics` y para `rrhh-atrasos`: es el mismo pendiente de la aceptación de la fase 3.
 - Crear el stream Kinesis con `terraform apply`: el 2026-11-13 se probó con la API y con CloudFormation, con el mismo `LabRole` (escritura, Lambda con event source mapping y enhanced fan-out funcionaron).
 - Que `LabRole` pueda leer el `SecureString` de SSM y descifrarlo con KMS al arrancar las tareas y la EC2.
 - Que el prefijo de dominio de Cognito (`rrhh-<cuenta>` por defecto) esté libre.
