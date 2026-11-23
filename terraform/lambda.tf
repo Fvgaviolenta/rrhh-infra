@@ -1,5 +1,7 @@
 # Consumidor 1 del stream rrhh-events (fase 3 de streaming): rrhh-stream-metrics cuenta las
 # marcas por minuto de llegada, empresa y tipo, y las publica en CloudWatch con logs EMF.
+# La misma función lee también rrhh-api-telemetry (fase 5), con un segundo mapping: cuenta los
+# requests por servicio, clase de status y empresa, y la latencia por servicio y ruta.
 # Corre fuera de la VPC: no toca MySQL ni Redis, y así no necesita NAT ni endpoints para llegar
 # a Kinesis y a CloudWatch. Usa LabRole (el lab no permite crear roles).
 # Un lote que falla 3 veces (partido con bisect) va a la DLQ SQS. El mensaje de la DLQ no trae
@@ -56,6 +58,33 @@ resource "aws_lambda_event_source_mapping" "stream_metrics" {
     filter {
       pattern = jsonencode({
         data = { eventType = ["asistencia.marca.registrada", "asistencia.editada"] }
+      })
+    }
+  }
+}
+
+# Segundo mapping (fase 5): la misma función lee la telemetría de APIs, con los mismos valores y
+# la misma DLQ que el mapping de rrhh-events.
+resource "aws_lambda_event_source_mapping" "stream_metrics_telemetry" {
+  function_name                  = aws_lambda_function.stream_metrics.arn
+  event_source_arn               = aws_kinesis_stream.api_telemetry.arn
+  starting_position              = "LATEST"
+  batch_size                     = 100
+  parallelization_factor         = 2
+  bisect_batch_on_function_error = true
+  maximum_retry_attempts         = 3
+
+  destination_config {
+    on_failure {
+      destination_arn = aws_sqs_queue.stream_metrics_dlq.arn
+    }
+  }
+
+  # Solo los registros de request; cualquier otra cosa en el stream no invoca la función.
+  filter_criteria {
+    filter {
+      pattern = jsonencode({
+        data = { tipo = ["api.request"] }
       })
     }
   }

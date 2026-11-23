@@ -742,3 +742,65 @@ run "dashboard_dlq_widget_includes_atrasos" {
     error_message = "el widget de DLQ muestra rrhh-atrasos-dlq"
   }
 }
+
+run "api_telemetry_stream_is_encrypted_with_one_shard" {
+  command = plan
+
+  assert {
+    condition     = aws_kinesis_stream.api_telemetry.name == "rrhh-api-telemetry" && aws_kinesis_stream.api_telemetry.shard_count == 1 && aws_kinesis_stream.api_telemetry.retention_period == 24 && aws_kinesis_stream.api_telemetry.stream_mode_details[0].stream_mode == "PROVISIONED" && aws_kinesis_stream.api_telemetry.encryption_type == "KMS" && aws_kinesis_stream.api_telemetry.kms_key_id == "alias/aws/kinesis"
+    error_message = "rrhh-api-telemetry: provisioned, 1 shard, 24 h y KMS alias/aws/kinesis, igual que rrhh-events"
+  }
+}
+
+run "telemetry_enabled_only_for_asistencia" {
+  command = apply
+
+  assert {
+    condition = alltrue([
+      for kv in ["RRHH_TELEMETRY_ENABLED=true", "TELEMETRY_STREAM_NAME=rrhh-api-telemetry"] :
+      contains([for e in jsondecode(aws_ecs_task_definition.svc["asistencia"].container_definitions)[0].environment : "${e.name}=${e.value}"], kv)
+    ])
+    error_message = "asistencia necesita RRHH_TELEMETRY_ENABLED=true y TELEMETRY_STREAM_NAME=rrhh-api-telemetry"
+  }
+
+  assert {
+    condition = alltrue([
+      for k in ["identity", "trabajadores", "contratos", "ausencias", "notifications"] :
+      length([for e in jsondecode(aws_ecs_task_definition.svc[k].container_definitions)[0].environment : e if e.name == "RRHH_TELEMETRY_ENABLED" || e.name == "TELEMETRY_STREAM_NAME"]) == 0
+    ])
+    error_message = "solo asistencia envía telemetría en el piloto"
+  }
+
+  assert {
+    condition = alltrue([
+      for k, t in aws_ecs_task_definition.svc :
+      length(distinct([for e in jsondecode(t.container_definitions)[0].environment : e.name])) == length(jsondecode(t.container_definitions)[0].environment)
+    ])
+    error_message = "ninguna task definition repite un nombre de variable"
+  }
+}
+
+run "stream_metrics_also_reads_the_api_telemetry" {
+  command   = plan
+  state_key = "stream_metrics_telemetry"
+
+  override_resource {
+    target          = aws_kinesis_stream.api_telemetry
+    override_during = plan
+    values          = { arn = "arn:aws:kinesis:us-east-1:123456789012:stream/rrhh-api-telemetry" }
+  }
+  override_resource {
+    target          = aws_sqs_queue.stream_metrics_dlq
+    override_during = plan
+    values          = { arn = "arn:aws:sqs:us-east-1:123456789012:rrhh-stream-metrics-dlq" }
+  }
+
+  assert {
+    condition     = aws_lambda_event_source_mapping.stream_metrics_telemetry.event_source_arn == "arn:aws:kinesis:us-east-1:123456789012:stream/rrhh-api-telemetry" && aws_lambda_event_source_mapping.stream_metrics_telemetry.starting_position == "LATEST" && aws_lambda_event_source_mapping.stream_metrics_telemetry.batch_size == 100 && aws_lambda_event_source_mapping.stream_metrics_telemetry.parallelization_factor == 2 && aws_lambda_event_source_mapping.stream_metrics_telemetry.bisect_batch_on_function_error == true && aws_lambda_event_source_mapping.stream_metrics_telemetry.maximum_retry_attempts == 3 && aws_lambda_event_source_mapping.stream_metrics_telemetry.destination_config[0].on_failure[0].destination_arn == "arn:aws:sqs:us-east-1:123456789012:rrhh-stream-metrics-dlq"
+    error_message = "el mapping de telemetría lee rrhh-api-telemetry desde LATEST, lotes de 100, paralelismo 2, bisect, 3 reintentos y DLQ rrhh-stream-metrics-dlq"
+  }
+  assert {
+    condition     = jsondecode(tolist(aws_lambda_event_source_mapping.stream_metrics_telemetry.filter_criteria[0].filter)[0].pattern).data.tipo == ["api.request"]
+    error_message = "el mapping de telemetría deja pasar solo tipo api.request"
+  }
+}
