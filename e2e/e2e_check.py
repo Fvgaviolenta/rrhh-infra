@@ -231,7 +231,8 @@ def main() -> int:
         inf.check(f"admin A crea turno que empezó a las {inicio}", r.status == 201 and bool(turno_id), f"HTTP {r.status}")
         hoy = dt.datetime.now(ZONA).date().isoformat()
         r = http("POST", url("/api/v1/jornadas"), A, {"trabajador_id": trab_a, "turno_id": turno_id, "fecha": hoy})
-        if r.status == 409:
+        if r.status == 409 or (r.status == 400 and "ya tiene una jornada" in r.texto):
+            # Segunda corrida del día: la regla de una jornada por día responde 400.
             inf.check("jornada de hoy", True, "ya existía: el atraso depende de su turno")
         else:
             inf.check("admin A asigna la jornada de hoy al trabajador A", r.status == 201, f"HTTP {r.status}")
