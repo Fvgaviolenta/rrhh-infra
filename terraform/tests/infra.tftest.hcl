@@ -337,8 +337,13 @@ run "services_use_public_ip_and_wait_on_identity" {
   command = plan
 
   assert {
-    condition     = alltrue([for s in concat([aws_ecs_service.identity], values(aws_ecs_service.svc)) : s.network_configuration[0].assign_public_ip == true && s.health_check_grace_period_seconds == 120]) && length(aws_ecs_service.svc) == 5
-    error_message = "los 6 servicios con IP pública y grace period 120"
+    condition     = alltrue([for s in concat([aws_ecs_service.identity], values(aws_ecs_service.svc)) : s.network_configuration[0].assign_public_ip == true]) && length(aws_ecs_service.svc) == 5
+    error_message = "los 6 servicios con IP pública"
+  }
+
+  assert {
+    condition     = aws_ecs_service.identity.health_check_grace_period_seconds == 300 && alltrue([for s in values(aws_ecs_service.svc) : s.health_check_grace_period_seconds == 120])
+    error_message = "identity con grace period 300 (arranca en unos 94 s y necesita 2 health checks de 30 s); los otros cinco con 120"
   }
 
   assert {
