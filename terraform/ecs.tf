@@ -122,6 +122,7 @@ resource "aws_ecs_task_definition" "svc" {
       local.sqs_env[each.key],
       local.kinesis_env[each.key],
       local.telemetry_env[each.key],
+      local.sns_env[each.key],
       local.db_password_env,
     )
     secrets = local.db_password_secrets

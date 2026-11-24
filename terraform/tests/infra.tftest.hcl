@@ -826,3 +826,40 @@ run "dashboard_shows_api_telemetry" {
     error_message = "iterator age también del stream rrhh-api-telemetry"
   }
 }
+
+# Consola de plataforma (ADR-020, S7): el mensaje de la plataforma también sale por correo con SNS.
+run "sns_topic_only_for_notifications" {
+  command = apply
+
+  assert {
+    condition = contains(
+      [for e in jsondecode(aws_ecs_task_definition.svc["notifications"].container_definitions)[0].environment : "${e.name}=${e.value}"],
+      "SNS_CORREOS_TOPIC_ARN=${aws_sns_topic.correos.arn}"
+    )
+    error_message = "notifications necesita SNS_CORREOS_TOPIC_ARN con el ARN del tema rrhh-correos"
+  }
+
+  assert {
+    condition = alltrue([
+      for k in ["identity", "trabajadores", "contratos", "asistencia", "ausencias"] :
+      length([for e in jsondecode(aws_ecs_task_definition.svc[k].container_definitions)[0].environment : e if e.name == "SNS_CORREOS_TOPIC_ARN"]) == 0
+    ])
+    error_message = "solo notifications recibe SNS_CORREOS_TOPIC_ARN"
+  }
+}
+
+run "sns_topic_has_no_terraform_subscriptions" {
+  command = plan
+
+  assert {
+    condition     = aws_sns_topic.correos.name == "rrhh-correos"
+    error_message = "el tema de correos se llama rrhh-correos"
+  }
+
+  assert {
+    # Las suscripciones email las crea notifications, una por destinatario y con filtro; una suscripción
+    # de Terraform sin filtro recibiría los correos de todas las empresas.
+    condition     = length(fileset(path.module, "*.tf")) > 0 && !strcontains(join("\n", [for f in fileset(path.module, "*.tf") : file("${path.module}/${f}")]), "aws_sns_topic_subscription")
+    error_message = "el módulo no declara aws_sns_topic_subscription"
+  }
+}

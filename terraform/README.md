@@ -17,6 +17,7 @@ Crea la arquitectura completa del lab en `us-east-1`: red y security groups, EC2
 | `data_tier.tf`, `secrets.tf`, `templates/` | EC2 de datos y contraseña de la base en SSM `SecureString` |
 | `alb.tf` | ALB interno, 6 target groups y reglas de `../alb/listener-rules.json` |
 | `sqs.tf` | Cola de eventos y DLQ (5 recepciones) |
+| `sns.tf` | Tema `rrhh-correos` de los correos de la consola de plataforma (ADR-020) y `SNS_CORREOS_TOPIC_ARN` solo para notifications (`local.sns_services`); sin suscripciones: notifications crea una por destinatario, con filtro por `destinatario` |
 | `kinesis.tf` | Streams `rrhh-events` y `rrhh-api-telemetry` (1 shard, 24 h, KMS cada uno) y sus variables para asistencia (`local.kinesis_services` y `local.telemetry_services`) |
 | `lambda.tf` | Lambda `rrhh-stream-metrics` (fuera de la VPC, `LabRole`), su log group, la DLQ `rrhh-stream-metrics-dlq` y dos event source mappings: `rrhh-events` filtrado por `eventType` y `rrhh-api-telemetry` filtrado por `tipo = api.request` |
 | `lambda/stream_metrics/` | Código Python de la Lambda: cuenta marcas por minuto de llegada, empresa y tipo (`Eventos`), y los requests por servicio, clase de status y empresa (`Requests`) con su latencia por servicio y ruta (`Latencia`); todo como logs EMF (namespace `RRHH/Streaming`) |
@@ -161,6 +162,7 @@ No se pudieron comprobar sin aplicar contra la cuenta:
 - Que el prefijo de dominio de Cognito (`rrhh-<cuenta>` por defecto) esté libre.
 - Que `LabRole` pueda ejecutar `cognito-idp:Admin*` desde identity.
 - La conexión JDBC usa `useSSL=false&allowPublicKeyRetrieval=true` (igual que las task definitions vivas): el tráfico a MySQL no va cifrado dentro de la VPC. Activar TLS queda pendiente de probar contra la instancia real.
+- SNS en el código Java: notifications publica cada mensaje de la plataforma en `rrhh-correos` con el atributo `destinatario` y, la primera vez que escribe a un correo, crea su suscripción email con filter policy por `destinatario`; la persona la confirma desde el correo de AWS antes de recibir mensajes. Sin `SNS_CORREOS_TOPIC_ARN` el servicio solo crea la notificación en la app.
 - SQS en el código Java: identity, contratos y ausencias publican con un outbox en MySQL y notifications consume por polling (AWS SDK v2). Terraform entrega `SQS_EVENTS_QUEUE_URL` y `AWS_REGION` a todos, y `RRHH_SQS_ENABLED=true` solo a los cuatro de `local.sqs_services` (identity, contratos, ausencias y notifications); sin esa variable el código no publica ni consume.
 - Kinesis en el código Java: Terraform entrega `KINESIS_STREAM_NAME` y `RRHH_KINESIS_ENABLED=true` solo a asistencia (`local.kinesis_services`); el publicador llega en la fase 2 de la propuesta de streaming. La partition key es `tenant_id`. Para la telemetría (fase 5) entrega `TELEMETRY_STREAM_NAME` y `RRHH_TELEMETRY_ENABLED=true`, también solo a asistencia (`local.telemetry_services`).
 - Que CloudWatch calcule el p95 de "Latencia p95 por servicio" sobre la lista `Latencia` de los documentos EMF que escribe `rrhh-stream-metrics`: la documentación de EMF lo permite, no se probó en el lab.
