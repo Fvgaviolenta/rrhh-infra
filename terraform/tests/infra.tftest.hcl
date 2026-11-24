@@ -840,9 +840,17 @@ run "sns_topic_only_for_notifications" {
   }
 
   assert {
+    condition = contains(
+      [for e in jsondecode(aws_ecs_task_definition.svc["notifications"].container_definitions)[0].environment : "${e.name}=${e.value}"],
+      "SNS_CORREOS_COPIA=owner@gmail.com"
+    )
+    error_message = "notifications manda copia de los mensajes de la plataforma al AdminPlataforma (SNS_CORREOS_COPIA)"
+  }
+
+  assert {
     condition = alltrue([
       for k in ["identity", "trabajadores", "contratos", "asistencia", "ausencias"] :
-      length([for e in jsondecode(aws_ecs_task_definition.svc[k].container_definitions)[0].environment : e if e.name == "SNS_CORREOS_TOPIC_ARN"]) == 0
+      length([for e in jsondecode(aws_ecs_task_definition.svc[k].container_definitions)[0].environment : e if e.name == "SNS_CORREOS_TOPIC_ARN" || e.name == "SNS_CORREOS_COPIA"]) == 0
     ])
     error_message = "solo notifications recibe SNS_CORREOS_TOPIC_ARN"
   }

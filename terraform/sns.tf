@@ -13,6 +13,8 @@ locals {
   sns_env = {
     for k, s in local.services : k => contains(local.sns_services, k) ? [
       { name = "SNS_CORREOS_TOPIC_ARN", value = aws_sns_topic.correos.arn },
+      # Copia de cada mensaje al AdminPlataforma: las empresas de prueba usan correos ficticios y así se ve que salen.
+      { name = "SNS_CORREOS_COPIA", value = var.platform_admin_email },
     ] : []
   }
 }
