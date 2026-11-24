@@ -137,13 +137,15 @@ resource "aws_ecs_task_definition" "svc" {
 }
 
 # identity va primero y espera estado estable; los otros cinco dependen de él (ver aws_ecs_service.svc).
+# Grace period de 300 s: identity arranca en unos 94 s (imagen, Flyway y Spring en 0,5 vCPU) y el ALB pide
+# 2 health checks de 30 s; con 120 s ECS lo detenía antes de verlo sano (lab, 2026-11-24).
 resource "aws_ecs_service" "identity" {
   name                              = local.service_names["identity"]
   cluster                           = aws_ecs_cluster.rrhh.id
   task_definition                   = aws_ecs_task_definition.svc["identity"].arn
   desired_count                     = var.desired_count
   launch_type                       = "FARGATE"
-  health_check_grace_period_seconds = 120
+  health_check_grace_period_seconds = 300
   wait_for_steady_state             = true
 
   network_configuration {
