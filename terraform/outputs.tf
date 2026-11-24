@@ -42,6 +42,11 @@ output "sqs_events_queue_url" {
   value       = aws_sqs_queue.events.url
 }
 
+output "sns_correos_topic_arn" {
+  description = "ARN del tema SNS de correos de la plataforma (SNS_CORREOS_TOPIC_ARN de notifications)"
+  value       = aws_sns_topic.correos.arn
+}
+
 output "kinesis_stream_name" {
   description = "Nombre del stream Kinesis de eventos (KINESIS_STREAM_NAME de asistencia)"
   value       = aws_kinesis_stream.events.name
